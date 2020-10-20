@@ -15,31 +15,53 @@ class RungeKuttaAdaptive {
 
     public:
 
+        /********************************************************************
+         * @brief Default constructor
+         * hmin is equal to length of [t, std::nextafter(t, infinity)] interval
+         * hmax is numerical infinity (std::numeric_limits<T>::max())
+         * atol is 1e-6
+         * rtol is 1e-3
+         *********************************************************************/
         RungeKuttaAdaptive() {
-            /* Default parameters */
-            T hmin = T(10) * std::numeric_limits<T>::min();
-            T hmax = std::numeric_limits<T>::max();
-            T atol = T(1.0e-6);
-            T rtol = T(1.0e-3);
-            SetParameters(hmin, hmax, atol, rtol);
-        }
-        RungeKuttaAdaptive(const T& hmin, const T& hmax, const T& atol, const T& rtol) {
-            SetParameters(hmin, hmax, atol, rtol);
+            SetHmin(T(10) * std::numeric_limits<T>::min());
+            SetHmax(std::numeric_limits<T>::max());
+            SetAtol(T(1.0e-6));
+            SetRtol(T(1.0e-3));
         }
 
-        void SetParameters(const T& hmin, const T& hmax, const T& atol, const T& rtol) {
-            SetHmin(hmin);
-            SetHmax(hmax);
-            SetAtol(atol);
-            SetRtol(rtol);
-        }
+        /********************************************************************
+         * @brief Default constructor
+         * @param[in] hmin min step size
+         * @param[in] hmax max step size
+         * @param[in] atol absolute tolerance
+         * @param[in] rtol relative tolerance
+         *********************************************************************/
+        RungeKuttaAdaptive(const T& hmin, const T& hmax, const T& atol, const T& rtol)
+         : hmin_(hmin), hmax_(hmax), atol_(atol), rtol_(rtol) {}
+
+        //! Set min step size
         void SetHmin(const T& hmin) { hmin_ = hmin; }
+        //! Set max step size
         void SetHmax(const T& hmax) { hmax_ = hmax; }
+        //! Set absolute tolerance
         void SetAtol(const T& atol) { atol_ = atol; }
+        //! Set relative tolerance
         void SetRtol(const T& rtol) { rtol_ = rtol; }
 
+        /********************************************************************
+         * @brief Solve initial value problem for first-order ODE
+         * y' = rhs(t, y), y(t0) = y0
+         * @param[in] rhs ODE right-hand-side
+         * @param[in] interval solution interval [t0, t_final]
+         * @param[in] y0 initial data
+         * @return tuple: flag - solution status,
+         *                tvals - vector of t,
+         *                yvals - vector of y
+         *********************************************************************/
         template <class F>
-        std::tuple<int, std::vector<T>, std::vector<T>> Solve(F rhs, const std::array<T, 2>& interval, const T& y0) {
+        std::tuple<int, std::vector<T>, std::vector<T>> Solve(
+            F rhs, const std::array<T, 2>& interval, const T& y0
+        ) {
             int flag = -1;
             std::vector<T> tvals, yvals;
 
@@ -53,14 +75,21 @@ class RungeKuttaAdaptive {
                 bool step_state = Step(rhs, interval[1]);
 
                 if (step_state) {
+                    /* current step accepted */
                     tvals.push_back(t_);
                     yvals.push_back(y_);
                 } else {
+                    /* current step rejected: step size h_ less than hmin_ */
                     flag = 1;
                 }
 
-                if (t_ >= interval[1]) { flag = 0; }
-                else if (t_ + h_ > interval[1]) { h_ = interval[1] - t_; }
+                if (t_ >= interval[1]) {
+                    /* calculation finished */
+                    flag = 0;
+                } else if (t_ + h_ > interval[1]) {
+                    /* trim time step */
+                    h_ = interval[1] - t_;
+                }
             }
             return std::make_tuple(flag, tvals, yvals);
         }
@@ -97,7 +126,7 @@ class RungeKuttaAdaptive {
 
         template <class F>
         bool Step(F rhs, const T& t_final) {
-            hmin_ = T(10) * std::abs(std::nextafter(t_, std::numeric_limits<T>::max()) - t_);
+            hmin_ = std::max(T(10) * std::abs(std::nextafter(t_, std::numeric_limits<T>::max()) - t_), hmin_);
 
             bool is_accepted = false;
 
@@ -144,20 +173,20 @@ class RungeKuttaAdaptive {
         virtual const std::array<T, NStages>& E() const = 0;
 
     protected:
-        T hmin_;
-        T hmax_;
-        T atol_;
-        T rtol_;
+        T hmin_;    ///< min step size
+        T hmax_;    ///< max step size
+        T atol_;    ///< absolute tolerance
+        T rtol_;    ///< relative tolerance
 
-        T h_;
-        T t_;
-        T y_;
-        std::array<T, NStages> K_{};
+        T h_;                           ///< current step size
+        T t_;                           ///< current time
+        T y_;                           ///< current sulution
+        std::array<T, NStages> K_{};    ///< current coefficients for stages
 
-        const T safety_factor_ = T(0.9);
-        const T max_factor_ = T(4);
-        const T min_factor_ = T(0.125);
-        const T error_exponent_ = T(1) / (T(1) + ErrOrder);
+        const T safety_factor_ = T(0.9);                       ///< safety factor
+        const T max_factor_ = T(4);                            ///< max step increasing factor
+        const T min_factor_ = T(0.25);                         ///< max step decreasing factor
+        const T error_exponent_ = T(1) / (T(1) + ErrOrder);    ///< error estimation exponent
 };
 
 
