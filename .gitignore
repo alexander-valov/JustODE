@@ -1,6 +1,6 @@
 build/
 doc/
-Installation/
+build_install/
 
 *.aux
 *.log
@@ -11,7 +11,8 @@ Installation/
 *.jar
 
 .idea/
-.vscode
+.vscode/
+.vs/
 
 .DS_Store
 Thumbs.db
@@ -26,4 +27,3 @@ Thumbs.db
 *.flv
 *.mov
 *.wmv
-

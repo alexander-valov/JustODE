@@ -1,21 +1,47 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.10)
 
-cmake_policy(SET CMP0048 NEW)
-project(RungeKutta VERSION 0.0.2)
+project(
+    RungeKutta
+    VERSION 0.0.2
+    LANGUAGES CXX
+)
 
-enable_testing()
+# ---------------------------------------------------------------
+# Check if RungeKutta is built as subproject or it's main project
+# ---------------------------------------------------------------
+set(RUNGE_KUTTA_MAIN_PROJECT OFF)
+if (CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+    set(RUNGE_KUTTA_MAIN_PROJECT ON)
+endif()
 
-set(CMAKE_INSTALL_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/Installation")
+# ---------------------------------------------------------------
+# Define configuration
+# ---------------------------------------------------------------
+set(RUNGE_KUTTA_TARGET_NAME ${PROJECT_NAME})
+set(RUNGE_KUTTA_INCLUDE_BUILD_DIR "${PROJECT_SOURCE_DIR}/include")
 
-set (CMAKE_BUILD_TYPE Debug)
-set (CMAKE_CXX_STANDARD 17)
-set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS}   -m64 -Wall -pedantic")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -m64 -Wall -pedantic")
+# ---------------------------------------------------------------
+# Default build type
+# ---------------------------------------------------------------
+if (NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release)
+    message("  ${RUNGE_KUTTA_TARGET_NAME}: Using default value of CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
+else()
+    message("  ${RUNGE_KUTTA_TARGET_NAME}: Obtained CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
+endif()
 
-add_executable(RungeKutta main.cpp)
+# ---------------------------------------------------------------
+# Add INTERFACE library
+# ---------------------------------------------------------------
+add_library(${RUNGE_KUTTA_TARGET_NAME} INTERFACE)
+add_library(${PROJECT_NAME}::${RUNGE_KUTTA_TARGET_NAME} ALIAS ${RUNGE_KUTTA_TARGET_NAME})
+target_compile_features(${RUNGE_KUTTA_TARGET_NAME} INTERFACE cxx_std_17)
+target_include_directories(
+    ${RUNGE_KUTTA_TARGET_NAME}
+    INTERFACE
+    $<BUILD_INTERFACE:${RUNGE_KUTTA_INCLUDE_BUILD_DIR}>
+    $<INSTALL_INTERFACE:include>
+)
 
-target_include_directories (RungeKutta PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-
-install(TARGETS RungeKutta DESTINATION bin)
-
-add_subdirectory(Tests)
+add_subdirectory(thirdparty/matplotplusplus)
+add_subdirectory(src)
