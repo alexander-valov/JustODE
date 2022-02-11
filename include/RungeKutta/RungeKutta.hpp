@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Utils.hpp"
+
 #include <vector>
 #include <tuple>
 #include <cmath>
@@ -20,8 +22,8 @@
  * @tparam ErrOrder Error control order
  * @tparam NStages The number of stages of the Runge-Kutta method
  *********************************************************************/
-template<class T, std::size_t ErrOrder, std::size_t NStages>
-class RungeKuttaAdaptive {
+template<class T, std::size_t ErrOrder, std::size_t NStages, detail::IsFloatingPoint<T> = true>
+class RungeKuttaBase {
 
 public:
 
@@ -32,7 +34,7 @@ public:
      * atol is 1e-6
      * rtol is 1e-3
      *********************************************************************/
-    RungeKuttaAdaptive() {
+    RungeKuttaBase() {
         SetHmin(T(10) * std::numeric_limits<T>::min());
         SetHmax(std::numeric_limits<T>::max());
         SetAtol(T(1.0e-6));
@@ -46,7 +48,7 @@ public:
      * @param[in] atol Absolute tolerance
      * @param[in] rtol Relative tolerance
      *********************************************************************/
-    RungeKuttaAdaptive(
+    RungeKuttaBase(
         const T& hmin, const T& hmax,
         const T& atol = T(1.0e-6), const T& rtol = T(1.0e-3)
     ) : hmin_(hmin), hmax_(hmax), atol_(atol), rtol_(rtol) {}
@@ -70,21 +72,26 @@ public:
      *                @a tvals - vector of t,
      *                @a yvals - vector of y
      *********************************************************************/
-    template<class F>
+    template<class Callable, class... Args>
     std::tuple<int, std::vector<T>, std::vector<T>> Solve(
-        F rhs, const std::array<T, 2>& interval, const T& y0
+        Callable&& rhs, const std::array<T, 2>& interval, const T& y0, Args&&... args
     ) {
+        static_assert(
+            std::is_invocable_r_v<T, Callable&&, T, T, Args&&...>,
+            "Invalid signature or return type of the ODE right-hand-side!"
+        );
+
         int flag = -1;
         std::vector<T> tvals, yvals;
 
         t_ = interval[0];
         y_ = y0;
-        h_ = CalcInitialStep(rhs, interval[0], y0);
+        h_ = CalcInitialStep(rhs, interval[0], y0, args...);
         tvals.push_back(t_);
         yvals.push_back(y_);
 
         while (flag == -1) {
-            bool step_state = Step(rhs, interval[1]);
+            bool step_state = Step(rhs, interval[1], args...);
 
             if (step_state) {
                 // current step accepted
@@ -115,10 +122,10 @@ protected:
      * @param[in] y0 Initial solution
      * @return Initial step size
      *********************************************************************/
-    template<class F>
-    T CalcInitialStep(F rhs, const T& t0, const T& y0) {
+    template<class Callable, class... Args>
+    T CalcInitialStep(Callable&& rhs, const T& t0, const T& y0, Args&&... args) {
         // calculate step for second derivative approximation
-        T f0 = rhs(t0, y0);
+        T f0 = rhs(t0, y0, args...);
         T scale = atol_ + std::abs(y0) * rtol_;
         T d0 = std::abs(y0 / scale);
         T d1 = std::abs(f0 / scale);
@@ -128,7 +135,7 @@ protected:
 
         // second derivative approximation
         T y1 = y0 + h0 * f0;
-        T f1 = rhs(t0 + h0, y1);
+        T f1 = rhs(t0 + h0, y1, args...);
         T d2 = std::abs((f1 - f0) / scale) / h0;
 
         T h1;
@@ -155,8 +162,8 @@ protected:
      * @param[in] t_final Final time of the given solution interval
      * @return Step status (success or fail if step size is too small)
      *********************************************************************/
-    template<class F>
-    bool Step(F rhs, const T& t_final) {
+    template<class Callable, class... Args>
+    bool Step(Callable&& rhs, const T& t_final, Args&&... args) {
         hmin_ = std::max(T(10) * std::abs(std::nextafter(t_, std::numeric_limits<T>::max()) - t_), hmin_);
 
         bool is_accepted = false;
@@ -165,7 +172,7 @@ protected:
             if (h_ < hmin_) { return false; }
 
             // perform solving RK-step for current step-size and estimate error
-            T y_new = RKStep(rhs, t_, y_, h_);
+            T y_new = RKStep(rhs, t_, y_, h_, args...);
             T delta = atol_ + std::max(std::abs(y_), std::abs(y_new)) * rtol_;
             T xi = ErrorEstimation(K_, delta);
 
@@ -193,11 +200,11 @@ protected:
      * @param[in] h Current step size
      * @return Solution for the current step
      *********************************************************************/
-    template<class F>
-    T RKStep(F rhs, const T& t, const T& y, const T& h) {
+    template<class Callable, class... Args>
+    T RKStep(Callable&& rhs, const T& t, const T& y, const T& h, Args&&... args) {
         for (std::size_t i = 0; i < NStages; i++) {
             T dy = std::inner_product(A()[i].begin(), A()[i].end(), K_.begin(), T(0));
-            K_[i] = h * rhs(t + C()[i] * h, y + dy);
+            K_[i] = h * rhs(t + C()[i] * h, y + dy, args...);
         }
         return y + std::inner_product(B().begin(), B().end(), K_.begin(), T(0));
     }
@@ -209,7 +216,7 @@ protected:
      * @return Error estimation
      *********************************************************************/
     T ErrorEstimation(const std::array<T, NStages>& K, const T& delta) {
-        return std::abs(std::inner_product(E().begin(), E().end(), K.begin(), T(0))) / delta;
+        return std::abs(std::inner_product(E().begin(), E().end(), K.begin(), T(0)) / delta);
     }
 
 protected:
@@ -244,7 +251,7 @@ protected:
 /********************************************************************
  * @brief Adaptive Runge-Kutta 4(5) algorithm.
  * 
- * This class inherits from RungeKuttaAdaptive which provides embedded
+ * This class inherits from RungeKuttaBase which provides embedded
  * Runge-Kutta methods workflow with automatic step-size control and
  * initial step-size selection.
  * 
@@ -258,14 +265,14 @@ protected:
  * 
  * @tparam T Floating point type
  *********************************************************************/
-template<class T>
-class RungeKutta45: public RungeKuttaAdaptive<T, 4, 6> {
+template<class T, detail::IsFloatingPoint<T> = true>
+class RungeKutta45: public RungeKuttaBase<T, 4, 6> {
 
 public:
 
-    RungeKutta45() : RungeKuttaAdaptive<T, 4, 6>() {}
+    RungeKutta45() : RungeKuttaBase<T, 4, 6>() {}
     RungeKutta45(const T& hmin, const T& hmax, const T& atol, const T& rtol)
-        : RungeKuttaAdaptive<T, 4, 6>(hmin, hmax, atol, rtol) {}
+        : RungeKuttaBase<T, 4, 6>(hmin, hmax, atol, rtol) {}
 
 protected:
 
