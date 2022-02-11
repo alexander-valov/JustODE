@@ -7,27 +7,27 @@
 #include <numeric>
 
 /********************************************************************
- * @brief Adaptive Runge-Kutta algorithm abstract base class
+ * @brief Adaptive explicit Runge-Kutta algorithm abstract base class.
  * 
- * This class implements embedded Runge-Kutta methods workflow with
+ * This class implements an embedded Runge-Kutta method with
  * automatic step-size control and initial step-size selection.
  * 
- * [1] Colin Barr Macdonald "THE PREDICTED SEQUENTIAL 
- * REGULARIZATION METHOD FOR DIFFERENTIAL-ALGEBRAICEQUATIONS"
+ * - [1] Colin Barr Macdonald "THE PREDICTED SEQUENTIAL 
+ * REGULARIZATION METHOD FOR DIFFERENTIAL-ALGEBRAIC EQUATIONS"
  * @see https://www.math.ubc.ca/~cbm/bscthesis/cbm-bscthesis.pdf
  * 
- * @tparam T float point type
- * @tparam ErrOrder error control order
- * @tparam NStages number of stages of Runge-Kutta method
+ * @tparam T Floating point type
+ * @tparam ErrOrder Error control order
+ * @tparam NStages The number of stages of the Runge-Kutta method
  *********************************************************************/
-template <class T, std::size_t ErrOrder, std::size_t NStages>
+template<class T, std::size_t ErrOrder, std::size_t NStages>
 class RungeKuttaAdaptive {
 
 public:
 
     /********************************************************************
-     * @brief Default constructor
-     * hmin is equal to length of [t, std::nextafter(t, infinity)] interval
+     * @brief Default constructor.
+     * hmin is equal to 10 * std::numeric_limits<T>::min()
      * hmax is numerical infinity (std::numeric_limits<T>::max())
      * atol is 1e-6
      * rtol is 1e-3
@@ -40,14 +40,16 @@ public:
     }
 
     /********************************************************************
-     * @brief Constructor
-     * @param[in] hmin min step size
-     * @param[in] hmax max step size
-     * @param[in] atol absolute tolerance
-     * @param[in] rtol relative tolerance
+     * @brief Constructor.
+     * @param[in] hmin Min step size
+     * @param[in] hmax Max step size
+     * @param[in] atol Absolute tolerance
+     * @param[in] rtol Relative tolerance
      *********************************************************************/
-    RungeKuttaAdaptive(const T& hmin, const T& hmax, const T& atol, const T& rtol)
-        : hmin_(hmin), hmax_(hmax), atol_(atol), rtol_(rtol) {}
+    RungeKuttaAdaptive(
+        const T& hmin, const T& hmax,
+        const T& atol = T(1.0e-6), const T& rtol = T(1.0e-3)
+    ) : hmin_(hmin), hmax_(hmax), atol_(atol), rtol_(rtol) {}
 
     //! Set min step size
     void SetHmin(const T& hmin) { hmin_ = hmin; }
@@ -59,16 +61,16 @@ public:
     void SetRtol(const T& rtol) { rtol_ = rtol; }
 
     /********************************************************************
-     * @brief Solve initial value problem for first-order ODE
+     * @brief Solves initial value problem for first-order ODE
      * y' = rhs(t, y), y(t0) = y0
      * @param[in] rhs ODE right-hand-side
-     * @param[in] interval solution interval [t0, t_final]
-     * @param[in] y0 initial data
-     * @return tuple: flag - status: 0 - finished, 1 - too small step size,
-     *                tvals - vector of t,
-     *                yvals - vector of y
+     * @param[in] interval Solution interval [t0, t_final]
+     * @param[in] y0 Initial data
+     * @return tuple: @a flag - status: 0 - finished, 1 - too small step size,
+     *                @a tvals - vector of t,
+     *                @a yvals - vector of y
      *********************************************************************/
-    template <class F>
+    template<class F>
     std::tuple<int, std::vector<T>, std::vector<T>> Solve(
         F rhs, const std::array<T, 2>& interval, const T& y0
     ) {
@@ -85,19 +87,19 @@ public:
             bool step_state = Step(rhs, interval[1]);
 
             if (step_state) {
-                /* current step accepted */
+                // current step accepted
                 tvals.push_back(t_);
                 yvals.push_back(y_);
             } else {
-                /* current step rejected: step size h_ less than hmin_ */
+                // current step rejected: step size h_ less than hmin_
                 flag = 1;
             }
 
             if (t_ >= interval[1]) {
-                /* calculation finished */
+                // calculation finished
                 flag = 0;
             } else if (t_ + h_ > interval[1]) {
-                /* trim time step */
+                // trim time step
                 h_ = interval[1] - t_;
             }
         }
@@ -107,15 +109,15 @@ public:
 protected:
 
     /********************************************************************
-     * @brief Calculate initial step size for Runge-Kutta
+     * @brief Calculates the initial step size for Runge-Kutta method.
      * @param[in] rhs ODE right-hand-side
-     * @param[in] t0 initial time
-     * @param[in] y0 initial solution
-     * @return initial step size
+     * @param[in] t0 Initial time
+     * @param[in] y0 Initial solution
+     * @return Initial step size
      *********************************************************************/
-    template <class F>
+    template<class F>
     T CalcInitialStep(F rhs, const T& t0, const T& y0) {
-        /* calculate step for second derivative approximation */
+        // calculate step for second derivative approximation
         T f0 = rhs(t0, y0);
         T scale = atol_ + std::abs(y0) * rtol_;
         T d0 = std::abs(y0 / scale);
@@ -124,7 +126,7 @@ protected:
         if (d0 < T(1e-5) || d1 < T(1e-5)) { h0 = T(1e-6); }
         else { h0 = T(0.01) * d0 / d1; }
 
-        /* second derivative approximation */
+        // second derivative approximation
         T y1 = y0 + h0 * f0;
         T f1 = rhs(t0 + h0, y1);
         T d2 = std::abs((f1 - f0) / scale) / h0;
@@ -140,40 +142,41 @@ protected:
     }
 
     /********************************************************************
-     * @brief Solve single Runge-Kutta step
+     * @brief This method computes a single Runge-Kutta step.
      * 
-     * Find step size h_ and solution y(t + h_) such that
+     * Finds step size h_ and solution y(t + h_) such that
      * this solution meets the requirements of accuracy (atol and rtol).
-     * If solution error for current step size exceeds tolerance the step size
-     * is decreased until convergence is achieved. If actual step size
-     * h_ less than hmin_ return false (too small step size)
+     * If solution error for the current step size exceeds the tolerance
+     * the step size is decreased until convergence is achieved.
+     * If actual step size h_ less than hmin_ then returns false
+     * (too small step size).
      * 
      * @param[in] rhs ODE right-hand-side
-     * @param[in] t_final final time of given solution interval
-     * @return step status (success or fail if step size is too small)
+     * @param[in] t_final Final time of the given solution interval
+     * @return Step status (success or fail if step size is too small)
      *********************************************************************/
-    template <class F>
+    template<class F>
     bool Step(F rhs, const T& t_final) {
         hmin_ = std::max(T(10) * std::abs(std::nextafter(t_, std::numeric_limits<T>::max()) - t_), hmin_);
 
         bool is_accepted = false;
         while (!is_accepted) {
-            /* if step size too small step is rejected, abort calculations */
+            // if the step size is too small, then the step is rejected and abort calculations
             if (h_ < hmin_) { return false; }
 
-            /* solve step for current step size and estimate error */
+            // perform solving RK-step for current step-size and estimate error
             T y_new = RKStep(rhs, t_, y_, h_);
             T delta = atol_ + std::max(std::abs(y_), std::abs(y_new)) * rtol_;
             T xi = ErrorEstimation(K_, delta);
 
             if (xi <= 1) {
-                /* step accepted */
+                // step is accepted
                 is_accepted = true;
                 t_ = t_ + h_;
                 y_ = y_new;
             }
             
-            /* calculate new step size according to estimated error */
+            // calculate new step size according to estimated error
             T scale = max_factor_;
             if (xi != 0) { scale = safety_factor_ * std::pow(T(1) / xi, error_exponent_); }
             scale = std::clamp(scale, min_factor_, max_factor_);
@@ -183,14 +186,14 @@ protected:
     }
 
     /********************************************************************
-     * @brief Runge-Kutta single step
+     * @brief Runge-Kutta single step.
      * @param[in] rhs ODE right-hand-side
-     * @param[in] t time from previous step
-     * @param[in] y solution from previous step
-     * @param[in] h current step size
-     * @return current step solution
+     * @param[in] t Time from the previous step
+     * @param[in] y Solution from the previous step
+     * @param[in] h Current step size
+     * @return Solution for the current step
      *********************************************************************/
-    template <class F>
+    template<class F>
     T RKStep(F rhs, const T& t, const T& y, const T& h) {
         for (std::size_t i = 0; i < NStages; i++) {
             T dy = std::inner_product(A()[i].begin(), A()[i].end(), K_.begin(), T(0));
@@ -200,10 +203,10 @@ protected:
     }
 
     /********************************************************************
-     * @brief Estimate error of given step
+     * @brief Estimates the error of the given step.
      * @param[in] K Runge-Kutta stages
-     * @param[in] delta error scaling
-     * @return error estimation
+     * @param[in] delta Error scaling
+     * @return Error estimation
      *********************************************************************/
     T ErrorEstimation(const std::array<T, NStages>& K, const T& delta) {
         return std::abs(std::inner_product(E().begin(), E().end(), K.begin(), T(0))) / delta;
@@ -232,14 +235,14 @@ protected:
     std::array<T, NStages> K_{};    ///< current coefficients for stages
 
     const T safety_factor_ = T(0.9);                       ///< safety factor
-    const T max_factor_ = T(4);                            ///< max step increasing factor
-    const T min_factor_ = T(0.25);                         ///< max step decreasing factor
+    const T max_factor_ = T(10);                           ///< max step increasing factor
+    const T min_factor_ = T(0.2);                          ///< max step decreasing factor
     const T error_exponent_ = T(1) / (T(1) + ErrOrder);    ///< error estimation exponent
 };
 
 
 /********************************************************************
- * @brief Adaptive Runge-Kutta 4(5) algorithm
+ * @brief Adaptive Runge-Kutta 4(5) algorithm.
  * 
  * This class inherits from RungeKuttaAdaptive which provides embedded
  * Runge-Kutta methods workflow with automatic step-size control and
@@ -250,12 +253,12 @@ protected:
  * Stages: 6
  * 
  * [1] Colin Barr Macdonald "THE PREDICTED SEQUENTIAL 
- * REGULARIZATIONMETHOD FOR DIFFERENTIAL-ALGEBRAICEQUATIONS"
+ * REGULARIZATIONMETHOD FOR DIFFERENTIAL-ALGEBRAIC EQUATIONS"
  * @see https://www.math.ubc.ca/~cbm/bscthesis/cbm-bscthesis.pdf
  * 
- * @tparam T float point type
+ * @tparam T Floating point type
  *********************************************************************/
-template <class T>
+template<class T>
 class RungeKutta45: public RungeKuttaAdaptive<T, 4, 6> {
 
 public:
