@@ -28,30 +28,16 @@ class RungeKuttaBase {
 public:
 
     /********************************************************************
-     * @brief Default constructor.
-     * hmin is equal to 10 * std::numeric_limits<T>::min()
-     * hmax is numerical infinity (std::numeric_limits<T>::max())
-     * atol is 1e-6
-     * rtol is 1e-3
-     *********************************************************************/
-    RungeKuttaBase() {
-        SetHmin(T(10) * std::numeric_limits<T>::min());
-        SetHmax(std::numeric_limits<T>::max());
-        SetAtol(T(1.0e-6));
-        SetRtol(T(1.0e-3));
-    }
-
-    /********************************************************************
      * @brief Constructor.
-     * @param[in] hmin Min step size
-     * @param[in] hmax Max step size
-     * @param[in] atol Absolute tolerance
-     * @param[in] rtol Relative tolerance
+     * @param[in] atol Absolute tolerance.
+     * @param[in] rtol Relative tolerance.
+     * @param[in] hmax Max step size.
+     * @param[in] hmin Min step size.
      *********************************************************************/
     RungeKuttaBase(
-        const T& hmin, const T& hmax,
-        const T& atol = T(1.0e-6), const T& rtol = T(1.0e-3)
-    ) : hmin_(hmin), hmax_(hmax), atol_(atol), rtol_(rtol) {}
+        const T& atol, const T& rtol,
+        const T& hmax, const T& hmin
+    ) : atol_(atol), rtol_(rtol), hmax_(hmax), hmin_(hmin) {}
 
     //! Set min step size
     void SetHmin(const T& hmin) { hmin_ = hmin; }
@@ -68,6 +54,7 @@ public:
      * @param[in] rhs ODE right-hand-side
      * @param[in] interval Solution interval [t0, t_final]
      * @param[in] y0 Initial data
+     * @param[in, out] args Additional arguments to pass to the RHS
      * @return tuple: @a flag - status: 0 - finished, 1 - too small step size,
      *                @a tvals - vector of t,
      *                @a yvals - vector of y
@@ -86,7 +73,8 @@ public:
 
         t_ = interval[0];
         y_ = y0;
-        h_ = CalcInitialStep(rhs, interval[0], y0, args...);
+        f_ = rhs(t_, y_, args...);
+        h_ = CalcInitialStep(rhs, t_, y_, f_, args...);
         tvals.push_back(t_);
         yvals.push_back(y_);
 
@@ -120,12 +108,13 @@ protected:
      * @param[in] rhs ODE right-hand-side
      * @param[in] t0 Initial time
      * @param[in] y0 Initial solution
+     * @param[in] f0 Initial value of RHS
+     * @param[in, out] args Additional arguments to pass to the RHS
      * @return Initial step size
      *********************************************************************/
     template<class Callable, class... Args>
-    T CalcInitialStep(Callable&& rhs, const T& t0, const T& y0, Args&&... args) {
+    T CalcInitialStep(Callable&& rhs, const T& t0, const T& y0, const T& f0, Args&&... args) {
         // calculate step for second derivative approximation
-        T f0 = rhs(t0, y0, args...);
         T scale = atol_ + std::abs(y0) * rtol_;
         T d0 = std::abs(y0 / scale);
         T d1 = std::abs(f0 / scale);
@@ -142,7 +131,7 @@ protected:
         if (d1 <= T(1e-15) && d2 <= T(1e-15)) {
             h1 = std::max(T(1e-6), T(1e-3) * h0);
         } else {
-            h1 = std::pow(T(0.01) / std::max(d1, d2), 1 / (ErrOrder + 1));
+            h1 = std::pow(T(0.01) / std::max(d1, d2), T(1) / (ErrOrder + T(1)));
         }
 
         return std::min(T(100) * h0, h1);
@@ -160,6 +149,7 @@ protected:
      * 
      * @param[in] rhs ODE right-hand-side
      * @param[in] t_final Final time of the given solution interval
+     * @param[in, out] args Additional arguments to pass to the RHS
      * @return Step status (success or fail if step size is too small)
      *********************************************************************/
     template<class Callable, class... Args>
@@ -172,14 +162,15 @@ protected:
             if (h_ < hmin_) { return false; }
 
             // perform solving RK-step for current step-size and estimate error
-            T y_new = RKStep(rhs, t_, y_, h_, args...);
+            auto [y_new, f_new] = RKStep(rhs, args...);
             T delta = atol_ + std::max(std::abs(y_), std::abs(y_new)) * rtol_;
-            T xi = ErrorEstimation(K_, delta);
+            T xi = ErrorEstimation(delta);
 
             if (xi <= 1) {
                 // step is accepted
                 is_accepted = true;
                 t_ = t_ + h_;
+                f_ = f_new;
                 y_ = y_new;
             }
             
@@ -195,28 +186,31 @@ protected:
     /********************************************************************
      * @brief Runge-Kutta single step.
      * @param[in] rhs ODE right-hand-side
-     * @param[in] t Time from the previous step
-     * @param[in] y Solution from the previous step
-     * @param[in] h Current step size
+     * @param[in, out] args Additional arguments to pass to the RHS
      * @return Solution for the current step
      *********************************************************************/
     template<class Callable, class... Args>
-    T RKStep(Callable&& rhs, const T& t, const T& y, const T& h, Args&&... args) {
-        for (std::size_t i = 0; i < NStages; i++) {
-            T dy = std::inner_product(A()[i].begin(), A()[i].end(), K_.begin(), T(0));
-            K_[i] = h * rhs(t + C()[i] * h, y + dy, args...);
+    std::pair<T, T> RKStep(Callable&& rhs, Args&&... args) {
+        K_[0] = f_;
+        for (std::size_t i = 1; i < NStages; i++) {
+            auto it = std::next(A()[i].begin(), i);
+            T dy = h_ * std::inner_product(A()[i].begin(), it, K_.begin(), T(0));
+            K_[i] = rhs(t_ + C()[i] * h_, y_ + dy, args...);
         }
-        return y + std::inner_product(B().begin(), B().end(), K_.begin(), T(0));
+
+        T y_new = y_ + h_ * std::inner_product(B().begin(), B().end(), K_.begin(), T(0));
+        T f_new = rhs(t_ + h_, y_new);
+
+        return {y_new, f_new};
     }
 
     /********************************************************************
      * @brief Estimates the error of the given step.
-     * @param[in] K Runge-Kutta stages
      * @param[in] delta Error scaling
      * @return Error estimation
      *********************************************************************/
-    T ErrorEstimation(const std::array<T, NStages>& K, const T& delta) {
-        return std::abs(std::inner_product(E().begin(), E().end(), K.begin(), T(0)) / delta);
+    T ErrorEstimation(const T& delta) {
+        return std::abs(h_ * std::inner_product(E().begin(), E().end(), K_.begin(), T(0)) / delta);
     }
 
 protected:
@@ -231,13 +225,14 @@ protected:
     virtual const std::array<T, NStages>& E() const = 0;
 
 protected:
-    T hmin_;    ///< min step size
-    T hmax_;    ///< max step size
     T atol_;    ///< absolute tolerance
     T rtol_;    ///< relative tolerance
+    T hmax_;    ///< max step size
+    T hmin_;    ///< min step size
 
     T h_;                           ///< current step size
     T t_;                           ///< current time
+    T f_;                           ///< current rhs
     T y_;                           ///< current sulution
     std::array<T, NStages> K_{};    ///< current coefficients for stages
 
@@ -270,9 +265,17 @@ class RungeKutta45: public RungeKuttaBase<T, 4, 6> {
 
 public:
 
-    RungeKutta45() : RungeKuttaBase<T, 4, 6>() {}
-    RungeKutta45(const T& hmin, const T& hmax, const T& atol, const T& rtol)
-        : RungeKuttaBase<T, 4, 6>(hmin, hmax, atol, rtol) {}
+    /********************************************************************
+     * @brief Constructor of the RK45 algorithm.
+     * @param[in] atol Absolute tolerance. Default is 1e-6.
+     * @param[in] rtol Relative tolerance. Default is 1e-3.
+     * @param[in] hmax Max step size. Default is numerical infinity.
+     * @param[in] hmin Min step size. Default is zero.
+     *********************************************************************/
+    RungeKutta45(
+        const T& atol = T(1.0e-6), const T& rtol = T(1.0e-3),
+        const T& hmax = std::numeric_limits<T>::max(), const T& hmin = T(0)
+    ) : RungeKuttaBase<T, 4, 6>(atol, rtol, hmax, hmin) {}
 
 protected:
 

@@ -37,7 +37,7 @@ int main() {
     };
 
     nfev = 0;
-    auto solver = RungeKutta45(0.05, 1.0e10, 1.0e-4, 1.0e-4);
+    auto solver = RungeKutta45(1.0e-6, 1.0e-10, 1.0e10, 0.0);
     auto [flag, tvals, yvals] = solver.Solve(rhs, {0.0, 15.0}, 1.0);
     std::cout << "nfev: " << nfev << "\n";
     std::cout << "size: " << tvals.size() << "\n";
