@@ -22,8 +22,17 @@
  * @tparam ErrOrder Error control order
  * @tparam NStages The number of stages of the Runge-Kutta method
  *********************************************************************/
-template<class T, std::size_t ErrOrder, std::size_t NStages, detail::IsFloatingPoint<T> = true>
+template<class Derived, class T, std::size_t ErrOrder, std::size_t NStages, detail::IsFloatingPoint<T> = true>
 class RungeKuttaBase {
+
+private:
+
+    struct Accessor : Derived {
+        constexpr static auto& A = Derived::A;
+        constexpr static auto& B = Derived::B;
+        constexpr static auto& C = Derived::C;
+        constexpr static auto& E = Derived::E;
+    };
 
 public:
 
@@ -176,7 +185,7 @@ protected:
             
             // calculate new step size according to estimated error
             T scale = max_factor_;
-            if (xi != 0) { scale = safety_factor_ * std::pow(T(1) / xi, error_exponent_); }
+            if (xi != 0) { scale = safety_factor_ * std::pow(xi, -error_exponent_); }
             scale = std::clamp(scale, min_factor_, max_factor_);
             h_ = std::min(scale * h_, hmax_);
         }
@@ -193,13 +202,15 @@ protected:
     std::pair<T, T> RKStep(Callable&& rhs, Args&&... args) {
         K_[0] = f_;
         for (std::size_t i = 1; i < NStages; i++) {
-            auto it = std::next(A()[i].begin(), i);
-            T dy = h_ * std::inner_product(A()[i].begin(), it, K_.begin(), T(0));
-            K_[i] = rhs(t_ + C()[i] * h_, y_ + dy, args...);
+            auto it = std::next(Accessor::A[i].begin(), i);
+            T dy = h_ * std::inner_product(Accessor::A[i].begin(), it, K_.begin(), T(0));
+            K_[i] = rhs(t_ + Accessor::C[i] * h_, y_ + dy, args...);
         }
 
-        T y_new = y_ + h_ * std::inner_product(B().begin(), B().end(), K_.begin(), T(0));
+        T y_new = y_ + h_ * std::inner_product(Accessor::B.begin(), Accessor::B.end(), K_.begin(), T(0));
         T f_new = rhs(t_ + h_, y_new);
+
+        K_.back() = f_new;
 
         return {y_new, f_new};
     }
@@ -210,19 +221,8 @@ protected:
      * @return Error estimation
      *********************************************************************/
     T ErrorEstimation(const T& delta) {
-        return std::abs(h_ * std::inner_product(E().begin(), E().end(), K_.begin(), T(0)) / delta);
+        return std::abs(h_ * std::inner_product(Accessor::E.begin(), Accessor::E.end(), K_.begin(), T(0)) / delta);
     }
-
-protected:
-
-    //! C Butcher tableau submatrix, pure virtual
-    virtual const std::array<T, NStages>& C() const = 0;
-    //! A Butcher tableau submatrix, pure virtual
-    virtual const std::array<std::array<T, NStages>, NStages>& A() const = 0;
-    //! B Butcher tableau submatrix, pure virtual
-    virtual const std::array<T, NStages>& B() const = 0;
-    //! E matrix, provides error estimation, pure virtual
-    virtual const std::array<T, NStages>& E() const = 0;
 
 protected:
     T atol_;    ///< absolute tolerance
@@ -230,11 +230,11 @@ protected:
     T hmax_;    ///< max step size
     T hmin_;    ///< min step size
 
-    T h_;                           ///< current step size
-    T t_;                           ///< current time
-    T f_;                           ///< current rhs
-    T y_;                           ///< current sulution
-    std::array<T, NStages> K_{};    ///< current coefficients for stages
+    T h_;                             ///< current step size
+    T t_;                             ///< current time
+    T f_;                             ///< current rhs
+    T y_;                             ///< current sulution
+    std::array<T, NStages + 1> K_{};  ///< current coefficients for stages
 
     const T safety_factor_ = T(0.9);                       ///< safety factor
     const T max_factor_ = T(10);                           ///< max step increasing factor
@@ -261,7 +261,7 @@ protected:
  * @tparam T Floating point type
  *********************************************************************/
 template<class T, detail::IsFloatingPoint<T> = true>
-class RungeKutta45: public RungeKuttaBase<T, 4, 6> {
+class RungeKutta45: public RungeKuttaBase<RungeKutta45<T>, T, 4, 6> {
 
 public:
 
@@ -275,25 +275,14 @@ public:
     RungeKutta45(
         const T& atol = T(1.0e-6), const T& rtol = T(1.0e-3),
         const T& hmax = std::numeric_limits<T>::max(), const T& hmin = T(0)
-    ) : RungeKuttaBase<T, 4, 6>(atol, rtol, hmax, hmin) {}
+    ) : RungeKuttaBase<RungeKutta45<T>, T, 4, 6>(atol, rtol, hmax, hmin) {}
 
 protected:
 
-    //! C Butcher tableau submatrix
-    const std::array<T, 6>& C() const { return C_data; }
-    //! A Butcher tableau submatrix
-    const std::array<std::array<T, 6>, 6>& A() const { return A_data; }
-    //! B Butcher tableau submatrix
-    const std::array<T, 6>& B() const { return B_data; }
-    //! E matrix, provides error estimation
-    const std::array<T, 6>& E() const { return E_data; }
-
-private:
-
-    const std::array<T, 6> C_data{
+    constexpr static std::array<T, 6> C{
         T(0), T(1)/T(4), T(3)/T(8), T(12)/T(13), T(1), T(1)/T(2)
     };
-    const std::array<std::array<T, 6>, 6> A_data{
+    constexpr static std::array<std::array<T, 6>, 6> A{
         std::array<T, 6>{T(0)           , T(0)            , T(0)            , T(0)           , T(0)        , T(0)},
         std::array<T, 6>{T(1)/T(4)      , T(0)            , T(0)            , T(0)           , T(0)        , T(0)},
         std::array<T, 6>{T(3)/T(32)     , T(9)/T(32)      , T(0)            , T(0)           , T(0)        , T(0)},
@@ -301,10 +290,10 @@ private:
         std::array<T, 6>{T(439)/T(216)  , T(-8)           , T(3680)/T(513)  , T(-845)/T(4104), T(0)        , T(0)},
         std::array<T, 6>{T(-8)/T(27)    , T(2)            , T(-3544)/T(2565), T(1859)/T(4104), T(-11)/T(40), T(0)}
     };
-    const std::array<T, 6> B_data{
+    constexpr static std::array<T, 6> B{
         T(25)/T(216), T(0), T(1408)/T(2565), T(2197)/T(4104), T(-1)/T(5), T(0)
     };
-    const std::array<T, 6> E_data{
+    constexpr static std::array<T, 6> E{
         T(1)/T(360), T(0), T(-128)/T(4275), T(-2197)/T(75240), T(1)/T(50), T(2)/T(55)
     };
 };
