@@ -26,9 +26,7 @@ void PrintResults(int flag, const std::vector<T>& tvals, const std::vector<T>& y
 
 int main() {
 
-    int nfev = 0;
     auto rhs = [&](double t, double y) {
-        nfev += 1;
         return -2 * y + std::exp(-2 * (t - 6) * (t - 6));
     };
 
@@ -36,9 +34,8 @@ int main() {
         return 0.25 * std::exp(-2 * t) * (4 + std::sqrt(2 * M_PI) * std::exp(25.0 / 2.0) * (std::erf(13.0 / std::sqrt(2)) + std::erf((-13.0 + 2 * t) / std::sqrt(2))));
     };
 
-    nfev = 0;
     auto solver = RungeKutta45(1.0e-6, 1.0e-10, 1.0e10, 0.0);
-    auto [flag, tvals, yvals] = solver.Solve(rhs, {0.0, 15.0}, 1.0);
+    auto [flag, nfev, message, tvals, yvals] = solver.Solve(rhs, {0.0, 15.0}, 1.0);
     std::cout << "nfev: " << nfev << "\n";
     std::cout << "size: " << tvals.size() << "\n";
     PrintResults(flag, tvals, yvals);

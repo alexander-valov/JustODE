@@ -3,10 +3,23 @@
 #include "Utils.hpp"
 
 #include <vector>
-#include <tuple>
+#include <utility>
 #include <cmath>
 #include <algorithm>
 #include <numeric>
+
+
+/********************************************************************
+ * @brief Stores ODE solution *y(t)* and a solver iformation.
+ *********************************************************************/
+template<class T, detail::IsFloatingPoint<T> = true>
+struct ODEResult {
+    int status = 0;      ///< The solver termination status
+    int nfev = 0;        ///< Number of RHS evaluations
+    std::string message; ///< Termination cause description
+    std::vector<T> t;    ///< The vector of t
+    std::vector<T> y;    ///< The vector of y
+};
 
 /********************************************************************
  * @brief Adaptive explicit Runge-Kutta algorithm base class.
@@ -85,7 +98,21 @@ public:
     RungeKuttaBase(
         const T& atol, const T& rtol,
         const T& hmax, const T& hmin
-    ) : atol_(atol), rtol_(rtol), hmax_(hmax), hmin_(hmin) {}
+    ) : atol_(atol), rtol_(rtol), hmax_(hmax), hmin_(hmin) {
+        static_assert(
+            (Accessor::A.size() == NStages && Accessor::A.front().size() == NStages) &&
+            (Accessor::E.size() == NStages || Accessor::E.size() == NStages + 1) &&
+            (Accessor::B.size() == NStages) &&
+            (Accessor::C.size() == NStages),
+            R"MESSAGE(
+            Check dimensions of the Butcher Tableau submatrices:
+                'A' must be NStages x NStages array (std::array<std::array<T, NStages>, NStages>),
+                'B' must be NStages array (std::array<T, NStages>),
+                'C' must be NStages array (std::array<T, NStages>),
+                'E' must be NStages     array (std::array<T, NStages>)     for a regular methods or
+                            NStages + 1 array (std::array<T, NStages + 1>) for an extended error estimation.
+            )MESSAGE");
+    }
 
     /// Set min step size
     void SetHmin(const T& hmin) { hmin_ = hmin; }
@@ -103,12 +130,10 @@ public:
      * @param[in] interval Solution interval [t0, t_final]
      * @param[in] y0 Initial data
      * @param[in, out] args Additional arguments to pass to the RHS
-     * @return tuple: @a flag - status: 0 - finished, 1 - too small step size,
-     *                @a tvals - vector of t,
-     *                @a yvals - vector of y
+     * @return ODEResult<T> object
      *********************************************************************/
     template<class Callable, class... Args>
-    std::tuple<int, std::vector<T>, std::vector<T>> Solve(
+    ODEResult<T> Solve(
         Callable&& rhs, const std::array<T, 2>& interval, const T& y0, Args&&... args
     ) {
         static_assert(
@@ -117,17 +142,26 @@ public:
         );
 
         int flag = -1;
+        std::size_t nfev = 0;
         std::vector<T> tvals, yvals;
 
+        // Right-hand side wrapper with nfev calculation support
+        auto rhs_wrapper = [&](const T& t, const T& y) {
+            nfev++;
+            return rhs(t, y, args...);
+        };
+
+        // Initialization
         t_ = interval[0];
         y_ = y0;
-        f_ = rhs(t_, y_, args...);
-        h_ = CalcInitialStep(rhs, t_, y_, f_, args...);
+        f_ = rhs_wrapper(t_, y_);
+        h_ = CalcInitialStep(rhs_wrapper, t_, y_, f_);
         tvals.push_back(t_);
         yvals.push_back(y_);
 
+        // Main integration loop
         while (flag == -1) {
-            bool step_state = Step(rhs, interval[1], args...);
+            bool step_state = Step(rhs_wrapper, interval[1]);
 
             if (step_state) {
                 // current step accepted
@@ -146,7 +180,15 @@ public:
                 h_ = interval[1] - t_;
             }
         }
-        return std::make_tuple(flag, tvals, yvals);
+
+        // Save results
+        ODEResult<T> result;
+        result.status = flag;
+        result.message = messages_[flag];
+        result.nfev = nfev;
+        result.t = std::move(tvals);
+        result.y = std::move(yvals);
+        return result;
     }
 
 protected:
@@ -157,11 +199,10 @@ protected:
      * @param[in] t0 Initial time
      * @param[in] y0 Initial solution
      * @param[in] f0 Initial value of RHS
-     * @param[in, out] args Additional arguments to pass to the RHS
      * @return Initial step size
      *********************************************************************/
-    template<class Callable, class... Args>
-    T CalcInitialStep(Callable&& rhs, const T& t0, const T& y0, const T& f0, Args&&... args) {
+    template<class Callable>
+    T CalcInitialStep(Callable&& rhs, const T& t0, const T& y0, const T& f0) {
         // calculate step for second derivative approximation
         T scale = atol_ + std::abs(y0) * rtol_;
         T d0 = std::abs(y0 / scale);
@@ -172,7 +213,7 @@ protected:
 
         // second derivative approximation
         T y1 = y0 + h0 * f0;
-        T f1 = rhs(t0 + h0, y1, args...);
+        T f1 = rhs(t0 + h0, y1);
         T d2 = std::abs((f1 - f0) / scale) / h0;
 
         T h1;
@@ -197,11 +238,10 @@ protected:
      * 
      * @param[in] rhs ODE right-hand-side
      * @param[in] t_final Final time of the given solution interval
-     * @param[in, out] args Additional arguments to pass to the RHS
      * @return Step status (success or fail if step size is too small)
      *********************************************************************/
-    template<class Callable, class... Args>
-    bool Step(Callable&& rhs, const T& t_final, Args&&... args) {
+    template<class Callable>
+    bool Step(Callable&& rhs, const T& t_final) {
         hmin_ = std::max(
             T(10) * std::abs(std::nextafter(t_, std::numeric_limits<T>::max()) - t_),
             hmin_
@@ -214,7 +254,7 @@ protected:
             if (h_ < hmin_) { return false; }
 
             // perform solving RK-step for current step-size and estimate error
-            auto [y_new, f_new] = RKStep(rhs, args...);
+            auto [y_new, f_new] = RKStep(rhs);
             T delta = atol_ + std::max(std::abs(y_), std::abs(y_new)) * rtol_;
             T xi = ErrorEstimation(delta);
 
@@ -238,18 +278,17 @@ protected:
     /********************************************************************
      * @brief Runge-Kutta single step.
      * @param[in] rhs ODE right-hand-side
-     * @param[in, out] args Additional arguments to pass to the RHS
      * @return Solution for the current step
      *********************************************************************/
-    template<class Callable, class... Args>
-    std::pair<T, T> RKStep(Callable&& rhs, Args&&... args) {
+    template<class Callable>
+    std::pair<T, T> RKStep(Callable&& rhs) {
         K_[0] = f_;
         for (std::size_t i = 1; i < NStages; i++) {
             auto it = std::next(Accessor::A[i].begin(), i);
             T dy = h_ * std::inner_product(
                 Accessor::A[i].begin(), it, K_.begin(), T(0)
             );
-            K_[i] = rhs(t_ + Accessor::C[i] * h_, y_ + dy, args...);
+            K_[i] = rhs(t_ + Accessor::C[i] * h_, y_ + dy);
         }
 
         T y_new = y_ + h_ * std::inner_product(
@@ -292,6 +331,11 @@ protected:
     const T max_factor_ = T(10);                        ///< max step increasing factor
     const T min_factor_ = T(0.2);                       ///< max step decreasing factor
     const T error_exponent_ = T(1) / (T(1) + ErrOrder); ///< error estimation exponent
+
+    const std::array<std::string, 2> messages_{
+        "Success",
+        "Terminated. Too small time step"
+    }; ///< The array of possible solver messages
 };
 
 
@@ -334,14 +378,14 @@ protected:
     constexpr static std::array<T, 6> C{
         T(0), T(1)/T(4), T(3)/T(8), T(12)/T(13), T(1), T(1)/T(2)
     };
-    constexpr static std::array<std::array<T, 6>, 6> A{
-        std::array<T, 6>{T(0)           , T(0)            , T(0)            , T(0)           , T(0)        , T(0)},
-        std::array<T, 6>{T(1)/T(4)      , T(0)            , T(0)            , T(0)           , T(0)        , T(0)},
-        std::array<T, 6>{T(3)/T(32)     , T(9)/T(32)      , T(0)            , T(0)           , T(0)        , T(0)},
-        std::array<T, 6>{T(1932)/T(2197), T(-7200)/T(2197), T(7296)/T(2197) , T(0)           , T(0)        , T(0)},
-        std::array<T, 6>{T(439)/T(216)  , T(-8)           , T(3680)/T(513)  , T(-845)/T(4104), T(0)        , T(0)},
-        std::array<T, 6>{T(-8)/T(27)    , T(2)            , T(-3544)/T(2565), T(1859)/T(4104), T(-11)/T(40), T(0)}
-    };
+    constexpr static std::array<std::array<T, 6>, 6> A{{
+        {T(0)           , T(0)            , T(0)            , T(0)           , T(0)        , T(0)},
+        {T(1)/T(4)      , T(0)            , T(0)            , T(0)           , T(0)        , T(0)},
+        {T(3)/T(32)     , T(9)/T(32)      , T(0)            , T(0)           , T(0)        , T(0)},
+        {T(1932)/T(2197), T(-7200)/T(2197), T(7296)/T(2197) , T(0)           , T(0)        , T(0)},
+        {T(439)/T(216)  , T(-8)           , T(3680)/T(513)  , T(-845)/T(4104), T(0)        , T(0)},
+        {T(-8)/T(27)    , T(2)            , T(-3544)/T(2565), T(1859)/T(4104), T(-11)/T(40), T(0)}
+    }};
     constexpr static std::array<T, 6> B{
         T(25)/T(216), T(0), T(1408)/T(2565), T(2197)/T(4104), T(-1)/T(5), T(0)
     };
