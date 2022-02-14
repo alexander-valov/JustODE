@@ -9,24 +9,63 @@
 #include <numeric>
 
 /********************************************************************
- * @brief Adaptive explicit Runge-Kutta algorithm abstract base class.
+ * @brief Adaptive explicit Runge-Kutta algorithm base class.
  * 
  * This class implements an embedded Runge-Kutta method with
  * automatic step-size control and initial step-size selection.
  * 
- * - [1] Colin Barr Macdonald "THE PREDICTED SEQUENTIAL 
- * REGULARIZATION METHOD FOR DIFFERENTIAL-ALGEBRAIC EQUATIONS"
- * @see https://www.math.ubc.ca/~cbm/bscthesis/cbm-bscthesis.pdf
+ * To implement a specific explicit RK method, you should:
+ *   1. Specify method's error order *ErrOrder* and number of stages
+ *      *NStages* as template parameters.
+ *   2. Define the following Butcher Tableau submatrices:
+ *      *C*, *A*, *B*, and *E*, where submatrix *E* is used for
+ *      error estimation and defined as *E = \\hat{B} - B*.
+ *      The *C* and *B* must be std::array<T, NStages>. The submatrix
+ *      *A* must be std::array<std::array<T, NStages>, NStages>.
+ *      The error estimation submatrix *E* can be std::array<T, NStages>
+ *      or std::array<T, NStages + 1>. The extended array *E* 
+ *      is applicable for methods like Dormand–Prince 4(5), there
+ *      the last stage can be eliminated since the last
+ *      stage coincides with the approximation computation. That
+ *      technique is used to reduce the number of RHS evaluations.
+ *   3. A constructor must accept parameters presented in the base
+ *      class (listed below).
  * 
+ * This class implements the Curiously Recurring Template Pattern
+ * (CRTP). CRTP is used to implement static polymorphism. That allows
+ * a user to define specific Butcher Tableau in a derived class.
+ * 
+ * References:
+ * - [1] Colin Barr Macdonald "The predicted sequential regularization 
+ *       method for differential-algebraic equations"
+ * - [2] J. R. Dormand, P. J. Prince, "A family of embedded Runge-Kutta
+ *       formulae", Journal of Computational and Applied Mathematics
+ * - [3] Butcher J. C. "Numerical methods for ordinary differential
+ *       equations", John Wiley & Sons, 2016
+ * 
+ * @tparam Derived The type of derived class
  * @tparam T Floating point type
  * @tparam ErrOrder Error control order
  * @tparam NStages The number of stages of the Runge-Kutta method
+ * 
+ * @see https://www.math.ubc.ca/~cbm/bscthesis/cbm-bscthesis.pdf
+ * @see https://core.ac.uk/download/pdf/81989096.pdf
+ * @see https://onlinelibrary.wiley.com/doi/book/10.1002/9781119121534
+ * @see https://www.math.auckland.ac.nz/~butcher/ODE-book-2008/Tutorials/RK-methods.pdf
+ * @see https://en.wikipedia.org/wiki/Runge%E2%80%93Kutta_methods
+ * @see https://en.wikipedia.org/wiki/List_of_Runge%E2%80%93Kutta_methods
  *********************************************************************/
-template<class Derived, class T, std::size_t ErrOrder, std::size_t NStages, detail::IsFloatingPoint<T> = true>
+template<class Derived, class T, std::size_t ErrOrder, std::size_t NStages,
+         detail::IsFloatingPoint<T> = true>
 class RungeKuttaBase {
 
 private:
 
+    /********************************************************************
+     * This class provides access to protected fields of a Derived class.
+     * @see https://en.wikipedia.org/wiki/Curiously_recurring_template_pattern
+     * @see https://stackoverflow.com/a/55928800
+     *********************************************************************/
     struct Accessor : Derived {
         constexpr static auto& A = Derived::A;
         constexpr static auto& B = Derived::B;
@@ -37,7 +76,7 @@ private:
 public:
 
     /********************************************************************
-     * @brief Constructor.
+     * @brief Constructs from tolerances and step sizes.
      * @param[in] atol Absolute tolerance.
      * @param[in] rtol Relative tolerance.
      * @param[in] hmax Max step size.
@@ -48,13 +87,13 @@ public:
         const T& hmax, const T& hmin
     ) : atol_(atol), rtol_(rtol), hmax_(hmax), hmin_(hmin) {}
 
-    //! Set min step size
+    /// Set min step size
     void SetHmin(const T& hmin) { hmin_ = hmin; }
-    //! Set max step size
+    /// Set max step size
     void SetHmax(const T& hmax) { hmax_ = hmax; }
-    //! Set absolute tolerance
+    /// Set absolute tolerance
     void SetAtol(const T& atol) { atol_ = atol; }
-    //! Set relative tolerance
+    /// Set relative tolerance
     void SetRtol(const T& rtol) { rtol_ = rtol; }
 
     /********************************************************************
@@ -163,11 +202,15 @@ protected:
      *********************************************************************/
     template<class Callable, class... Args>
     bool Step(Callable&& rhs, const T& t_final, Args&&... args) {
-        hmin_ = std::max(T(10) * std::abs(std::nextafter(t_, std::numeric_limits<T>::max()) - t_), hmin_);
+        hmin_ = std::max(
+            T(10) * std::abs(std::nextafter(t_, std::numeric_limits<T>::max()) - t_),
+            hmin_
+        );
 
         bool is_accepted = false;
         while (!is_accepted) {
-            // if the step size is too small, then the step is rejected and abort calculations
+            // if the step size is too small, then the step is rejected 
+            // and abort calculations
             if (h_ < hmin_) { return false; }
 
             // perform solving RK-step for current step-size and estimate error
@@ -203,13 +246,18 @@ protected:
         K_[0] = f_;
         for (std::size_t i = 1; i < NStages; i++) {
             auto it = std::next(Accessor::A[i].begin(), i);
-            T dy = h_ * std::inner_product(Accessor::A[i].begin(), it, K_.begin(), T(0));
+            T dy = h_ * std::inner_product(
+                Accessor::A[i].begin(), it, K_.begin(), T(0)
+            );
             K_[i] = rhs(t_ + Accessor::C[i] * h_, y_ + dy, args...);
         }
 
-        T y_new = y_ + h_ * std::inner_product(Accessor::B.begin(), Accessor::B.end(), K_.begin(), T(0));
+        T y_new = y_ + h_ * std::inner_product(
+            Accessor::B.begin(), Accessor::B.end(), K_.begin(), T(0)
+        );
         T f_new = rhs(t_ + h_, y_new);
 
+        // Last stage calculation for the extended error estimation submatrix E
         K_.back() = f_new;
 
         return {y_new, f_new};
@@ -221,7 +269,11 @@ protected:
      * @return Error estimation
      *********************************************************************/
     T ErrorEstimation(const T& delta) {
-        return std::abs(h_ * std::inner_product(Accessor::E.begin(), Accessor::E.end(), K_.begin(), T(0)) / delta);
+        return std::abs(
+            h_ * std::inner_product(
+                Accessor::E.begin(), Accessor::E.end(), K_.begin(), T(0)
+            ) / delta
+        );
     }
 
 protected:
@@ -230,16 +282,16 @@ protected:
     T hmax_;    ///< max step size
     T hmin_;    ///< min step size
 
-    T h_;                             ///< current step size
-    T t_;                             ///< current time
-    T f_;                             ///< current rhs
-    T y_;                             ///< current sulution
-    std::array<T, NStages + 1> K_{};  ///< current coefficients for stages
+    T h_;                            ///< current step size
+    T t_;                            ///< current time
+    T f_;                            ///< current rhs
+    T y_;                            ///< current sulution
+    std::array<T, NStages + 1> K_{}; ///< current coefficients for stages
 
-    const T safety_factor_ = T(0.9);                       ///< safety factor
-    const T max_factor_ = T(10);                           ///< max step increasing factor
-    const T min_factor_ = T(0.2);                          ///< max step decreasing factor
-    const T error_exponent_ = T(1) / (T(1) + ErrOrder);    ///< error estimation exponent
+    const T safety_factor_ = T(0.9);                    ///< safety factor
+    const T max_factor_ = T(10);                        ///< max step increasing factor
+    const T min_factor_ = T(0.2);                       ///< max step decreasing factor
+    const T error_exponent_ = T(1) / (T(1) + ErrOrder); ///< error estimation exponent
 };
 
 
