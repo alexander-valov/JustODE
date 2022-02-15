@@ -2,6 +2,8 @@
 
 #include <type_traits>
 
+namespace JustODE {
+
 namespace detail {
 
     /** @brief Discarded statement dependent of the template parameters */
@@ -58,4 +60,6 @@ namespace detail {
         class TP3 = typename promote_fp<T3>::type
     >
     struct promote_fp_3 { typedef std::remove_reference_t<decltype(TP1() + TP2() + TP3())> type; };
+}
+
 }

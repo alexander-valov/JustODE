@@ -1,13 +1,15 @@
-#pragma once
+# pragma once
+
+#include <cmath>
+#include <array>
+#include <vector>
+#include <utility>
+#include <numeric>
+#include <algorithm>
 
 #include "Utils.hpp"
 
-#include <vector>
-#include <utility>
-#include <cmath>
-#include <algorithm>
-#include <numeric>
-
+namespace JustODE {
 
 /********************************************************************
  * @brief Stores ODE solution *y(t)* and a solver iformation.
@@ -338,58 +340,4 @@ protected:
     }; ///< The array of possible solver messages
 };
 
-
-/********************************************************************
- * @brief Adaptive Runge-Kutta 4(5) algorithm.
- * 
- * This class inherits from RungeKuttaBase which provides embedded
- * Runge-Kutta methods workflow with automatic step-size control and
- * initial step-size selection.
- * 
- * Scheme order: 4
- * Error order: 5
- * Stages: 6
- * 
- * [1] Colin Barr Macdonald "THE PREDICTED SEQUENTIAL 
- * REGULARIZATIONMETHOD FOR DIFFERENTIAL-ALGEBRAIC EQUATIONS"
- * @see https://www.math.ubc.ca/~cbm/bscthesis/cbm-bscthesis.pdf
- * 
- * @tparam T Floating point type
- *********************************************************************/
-template<class T, detail::IsFloatingPoint<T> = true>
-class RungeKutta45: public RungeKuttaBase<RungeKutta45<T>, T, 4, 6> {
-
-public:
-
-    /********************************************************************
-     * @brief Constructor of the RK45 algorithm.
-     * @param[in] atol Absolute tolerance. Default is 1e-6.
-     * @param[in] rtol Relative tolerance. Default is 1e-3.
-     * @param[in] hmax Max step size. Default is numerical infinity.
-     * @param[in] hmin Min step size. Default is zero.
-     *********************************************************************/
-    RungeKutta45(
-        const T& atol = T(1.0e-6), const T& rtol = T(1.0e-3),
-        const T& hmax = std::numeric_limits<T>::max(), const T& hmin = T(0)
-    ) : RungeKuttaBase<RungeKutta45<T>, T, 4, 6>(atol, rtol, hmax, hmin) {}
-
-protected:
-
-    constexpr static std::array<T, 6> C{
-        T(0), T(1)/T(4), T(3)/T(8), T(12)/T(13), T(1), T(1)/T(2)
-    };
-    constexpr static std::array<std::array<T, 6>, 6> A{{
-        {T(0)           , T(0)            , T(0)            , T(0)           , T(0)        , T(0)},
-        {T(1)/T(4)      , T(0)            , T(0)            , T(0)           , T(0)        , T(0)},
-        {T(3)/T(32)     , T(9)/T(32)      , T(0)            , T(0)           , T(0)        , T(0)},
-        {T(1932)/T(2197), T(-7200)/T(2197), T(7296)/T(2197) , T(0)           , T(0)        , T(0)},
-        {T(439)/T(216)  , T(-8)           , T(3680)/T(513)  , T(-845)/T(4104), T(0)        , T(0)},
-        {T(-8)/T(27)    , T(2)            , T(-3544)/T(2565), T(1859)/T(4104), T(-11)/T(40), T(0)}
-    }};
-    constexpr static std::array<T, 6> B{
-        T(25)/T(216), T(0), T(1408)/T(2565), T(2197)/T(4104), T(-1)/T(5), T(0)
-    };
-    constexpr static std::array<T, 6> E{
-        T(1)/T(360), T(0), T(-128)/T(4275), T(-2197)/T(75240), T(1)/T(50), T(2)/T(55)
-    };
-};
+}
