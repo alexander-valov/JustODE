@@ -16,11 +16,11 @@ namespace JustODE {
  *********************************************************************/
 template<class T, detail::IsFloatingPoint<T> = true>
 struct ODEResult {
-    int status = 0;      ///< The solver termination status
-    int nfev = 0;        ///< Number of RHS evaluations
-    std::string message; ///< Termination cause description
     std::vector<T> t;    ///< The vector of t
     std::vector<T> y;    ///< The vector of y
+    int status = 0;      ///< The solver termination status
+    std::string message; ///< Termination cause description
+    int nfev = 0;        ///< Number of RHS evaluations
 };
 
 /********************************************************************
@@ -95,12 +95,13 @@ public:
      * @param[in] atol Absolute tolerance.
      * @param[in] rtol Relative tolerance.
      * @param[in] hmax Max step size.
-     * @param[in] hmin Min step size.
      *********************************************************************/
     RungeKuttaBase(
-        const T& atol, const T& rtol,
-        const T& hmax, const T& hmin
-    ) : atol_(atol), rtol_(rtol), hmax_(hmax), hmin_(hmin) {
+        std::optional<T> atol = std::nullopt,
+        std::optional<T> rtol = std::nullopt,
+        std::optional<T> hmax = std::nullopt,
+        std::optional<T> h_start = std::nullopt
+    ) {
         static_assert(
             (Accessor::A.size() == NStages && Accessor::A.front().size() == NStages) &&
             (Accessor::E.size() == NStages || Accessor::E.size() == NStages + 1) &&
@@ -114,16 +115,30 @@ public:
                 'E' must be NStages     array (std::array<T, NStages>)     for a regular methods or
                             NStages + 1 array (std::array<T, NStages + 1>) for an extended error estimation.
             )MESSAGE");
+
+        SetAtol(atol.value_or(DefaultParams<T>::atol));
+        SetRtol(rtol.value_or(DefaultParams<T>::rtol));
+        SetHmax(hmax.value_or(DefaultParams<T>::hmax));
+        SetHStart(h_start);
     }
 
-    /// Set min step size
-    void SetHmin(const T& hmin) { hmin_ = hmin; }
-    /// Set max step size
-    void SetHmax(const T& hmax) { hmax_ = hmax; }
     /// Set absolute tolerance
     void SetAtol(const T& atol) { atol_ = atol; }
     /// Set relative tolerance
     void SetRtol(const T& rtol) { rtol_ = rtol; }
+    /// Set max step size
+    void SetHmax(const T& hmax) { hmax_ = hmax; }
+    /// Set start step size
+    void SetHStart(std::optional<T> h_start = std::nullopt) { h_start_ = h_start; }
+
+    /// Get absolute tolerance
+    const T& GetAtol() { return atol_; }
+    /// Get relative tolerance
+    const T& GetRtol() { return rtol_; }
+    /// Get max step size
+    const T& GetHmax() { return hmax_; }
+    /// Get user defined start step size (if std::nullopt then initial step selected automatic)
+    std::optional<T> GetUserHStart() { return h_start_; }
 
     /********************************************************************
      * @brief Solves initial value problem for first-order ODE
@@ -157,7 +172,11 @@ public:
         t_ = interval[0];
         y_ = y0;
         f_ = rhs_wrapper(t_, y_);
-        h_ = CalcInitialStep(rhs_wrapper, t_, y_, f_);
+        if (!h_start_.has_value()) {
+            h_ = CalcInitialStep(rhs_wrapper, t_, y_, f_);
+        } else {
+            h_ = h_start_.value();
+        }
         tvals.push_back(t_);
         yvals.push_back(y_);
 
@@ -170,7 +189,7 @@ public:
                 tvals.push_back(t_);
                 yvals.push_back(y_);
             } else {
-                // current step rejected: step size h_ less than hmin_
+                // current step rejected: step size h_ less than hmin
                 flag = 1;
             }
 
@@ -235,7 +254,7 @@ protected:
      * this solution meets the requirements of accuracy (atol and rtol).
      * If solution error for the current step size exceeds the tolerance
      * the step size is decreased until convergence is achieved.
-     * If actual step size h_ less than hmin_ then returns false
+     * If actual step size h_ less than hmin then returns false
      * (too small step size).
      * 
      * @param[in] rhs ODE right-hand-side
@@ -244,16 +263,15 @@ protected:
      *********************************************************************/
     template<class Callable>
     bool Step(Callable&& rhs, const T& t_final) {
-        hmin_ = std::max(
-            T(10) * std::abs(std::nextafter(t_, std::numeric_limits<T>::max()) - t_),
-            hmin_
+        T hmin = T(10) * std::abs(
+            std::nextafter(t_, std::numeric_limits<T>::max()) - t_
         );
 
         bool is_accepted = false;
         while (!is_accepted) {
             // if the step size is too small, then the step is rejected 
             // and abort calculations
-            if (h_ < hmin_) { return false; }
+            if (h_ < hmin) { return false; }
 
             // perform solving RK-step for current step-size and estimate error
             auto [y_new, f_new] = RKStep(rhs);
@@ -318,10 +336,10 @@ protected:
     }
 
 protected:
-    T atol_;    ///< absolute tolerance
-    T rtol_;    ///< relative tolerance
-    T hmax_;    ///< max step size
-    T hmin_;    ///< min step size
+    T atol_;                   ///< absolute tolerance
+    T rtol_;                   ///< relative tolerance
+    T hmax_;                   ///< max step size
+    std::optional<T> h_start_; ///< optional start step size
 
     T h_;                            ///< current step size
     T t_;                            ///< current time

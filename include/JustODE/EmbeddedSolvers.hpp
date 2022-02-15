@@ -34,12 +34,13 @@ public:
      * @param[in] atol Absolute tolerance. Default is 1e-6.
      * @param[in] rtol Relative tolerance. Default is 1e-3.
      * @param[in] hmax Max step size. Default is numerical infinity.
-     * @param[in] hmin Min step size. Default is zero.
      *********************************************************************/
     RKF45(
-        const T& atol = T(1.0e-6), const T& rtol = T(1.0e-3),
-        const T& hmax = std::numeric_limits<T>::max(), const T& hmin = T(0)
-    ) : RungeKuttaBase<RKF45<T>, T, 4, 6>(atol, rtol, hmax, hmin) {}
+        std::optional<T> atol = std::nullopt,
+        std::optional<T> rtol = std::nullopt,
+        std::optional<T> hmax = std::nullopt,
+        std::optional<T> h_start = std::nullopt
+    ) : RungeKuttaBase<RKF45<T>, T, 4, 6>(atol, rtol, hmax, h_start) {}
 
 protected:
 
@@ -89,12 +90,13 @@ public:
      * @param[in] atol Absolute tolerance. Default is 1e-6.
      * @param[in] rtol Relative tolerance. Default is 1e-3.
      * @param[in] hmax Max step size. Default is numerical infinity.
-     * @param[in] hmin Min step size. Default is zero.
      *********************************************************************/
     DOPRI54(
-        const T& atol = T(1.0e-6), const T& rtol = T(1.0e-3),
-        const T& hmax = std::numeric_limits<T>::max(), const T& hmin = T(0)
-    ) : RungeKuttaBase<DOPRI54<T>, T, 4, 6>(atol, rtol, hmax, hmin) {}
+        std::optional<T> atol = std::nullopt,
+        std::optional<T> rtol = std::nullopt,
+        std::optional<T> hmax = std::nullopt,
+        std::optional<T> h_start = std::nullopt
+    ) : RungeKuttaBase<DOPRI54<T>, T, 4, 6>(atol, rtol, hmax, h_start) {}
 
 protected:
 

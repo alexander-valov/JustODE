@@ -1,6 +1,7 @@
 #pragma once
 
 #include <type_traits>
+#include <limits>
 
 namespace JustODE {
 
@@ -61,5 +62,12 @@ namespace detail {
     >
     struct promote_fp_3 { typedef std::remove_reference_t<decltype(TP1() + TP2() + TP3())> type; };
 }
+
+template<class T, detail::IsFloatingPoint<T> = true>
+struct DefaultParams {
+    constexpr static T atol = T(1e-6);
+    constexpr static T rtol = T(1e-3);
+    constexpr static T hmax = std::numeric_limits<T>::max();
+};
 
 }
