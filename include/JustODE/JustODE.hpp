@@ -8,6 +8,7 @@ namespace JustODE {
  * @brief List of available methods of ODE numerical integration.
  *********************************************************************/
 enum class Methods {
+    RK32,
     RKF45,      ///< Explicit Runge-Kutta-Fehlberf 4(5)
     DOPRI54     ///< Explicit Dormand-Prince 5(4)
 };
@@ -48,12 +49,9 @@ enum class Methods {
  * @param[in] hmax (optional) Max step size. Default is numerical infinity.
  * @param[in] h_start (optional) Start step size. If not specified or 
  *                    std::nullopt then initial step selected automatic.
- * @param[in, out] args Tuple of additional arguments to pass to the RHS.
- *                      Default is empty std::tuple<>{}.
  * @return ODEResult<T> object
  *********************************************************************/
-template<class T, Methods method = Methods::DOPRI54,
-         class Callable, class... Args,
+template<class T, Methods method = Methods::DOPRI54, class Callable,
          detail::IsFloatingPoint<T> = true>
 ODEResult<T> SolveIVP(
     Callable&& rhs,
@@ -62,15 +60,17 @@ ODEResult<T> SolveIVP(
     std::optional<T> atol    = std::nullopt,
     std::optional<T> rtol    = std::nullopt,
     std::optional<T> hmax    = std::nullopt,
-    std::optional<T> h_start = std::nullopt,
-    std::tuple<Args...> args = std::tuple<>{}
+    std::optional<T> h_start = std::nullopt
 ) {
-    if constexpr (method == Methods::RKF45) {
+    if constexpr (method == Methods::RK32) {
+        auto solver = RK32<T>(atol, rtol, hmax, h_start);
+        return solver.Solve(rhs, interval, y0);
+    } else if constexpr (method == Methods::RKF45) {
         auto solver = RKF45<T>(atol, rtol, hmax, h_start);
-        return solver.Solve(rhs, interval, y0, args);
+        return solver.Solve(rhs, interval, y0);
     } else if constexpr (method == Methods::DOPRI54) {
         auto solver = DOPRI54<T>(atol, rtol, hmax, h_start);
-        return solver.Solve(rhs, interval, y0, args);
+        return solver.Solve(rhs, interval, y0);
     } else {
         static_assert(
             detail::always_false<T>::value,

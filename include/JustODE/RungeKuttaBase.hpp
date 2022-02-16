@@ -145,19 +145,21 @@ public:
 
     /********************************************************************
      * @brief Solves initial value problem for first-order ODE
-     * y' = rhs(t, y), y(t0) = y0
+     * 
+     *     dy / dt = rhs(t, y),
+     *     y(t0) = y0.
+     * 
      * @param[in] rhs ODE right-hand-side
      * @param[in] interval Solution interval [t0, t_final]
      * @param[in] y0 Initial data
-     * @param[in, out] args Additional arguments to pass to the RHS
      * @return ODEResult<T> object
      *********************************************************************/
-    template<class Callable, class... Args>
+    template<class Callable>
     ODEResult<T> Solve(
-        Callable&& rhs, const std::array<T, 2>& interval, const T& y0, std::tuple<Args...> args = std::tuple<>{}
+        Callable&& rhs, const std::array<T, 2>& interval, const T& y0
     ) {
         static_assert(
-            std::is_invocable_r_v<T, Callable&&, T, T, Args...>,
+            std::is_invocable_r_v<T, Callable&&, const T&, const T&>,
             "Invalid signature or return type of the ODE right-hand-side!"
         );
 
@@ -168,7 +170,7 @@ public:
         // Right-hand side wrapper with nfev calculation support
         auto rhs_wrapper = [&](const T& t, const T& y) {
             nfev++;
-            return std::apply(rhs, std::tuple_cat(std::tuple{t, y}, args));
+            return rhs(t, y);
         };
 
         // Initialization

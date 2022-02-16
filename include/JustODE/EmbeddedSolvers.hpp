@@ -8,6 +8,57 @@
 namespace JustODE {
 
 /********************************************************************
+ * @brief Bogacki–Shampine 3(2) method.
+ * 
+ * Scheme order: 3
+ * Error order: 2
+ * Stages: 3 (applying FSAL - First Same As Last)
+ * 
+ * - [1] P. Bogacki, L.F. Shampine, "A 3(2) Pair of Runge-Kutta Formulas",
+         Appl. Math. Lett. Vol. 2, No. 4. pp. 321-325, 1989.
+ * 
+ * @tparam T Floating point type
+ * 
+ * @see https://www.sciencedirect.com/science/article/pii/0893965989900797
+ * @see https://en.wikipedia.org/wiki/Bogacki%E2%80%93Shampine_method
+ *********************************************************************/
+template<class T, detail::IsFloatingPoint<T> = true>
+class RK32: public RungeKuttaBase<RK32<T>, T, 2, 3> {
+
+public:
+
+    /********************************************************************
+     * @brief Constructor of the RK32 method.
+     * @param[in] atol Absolute tolerance. Default is 1e-6.
+     * @param[in] rtol Relative tolerance. Default is 1e-3.
+     * @param[in] hmax Max step size. Default is numerical infinity.
+     *********************************************************************/
+    RK32(
+        std::optional<T> atol = std::nullopt,
+        std::optional<T> rtol = std::nullopt,
+        std::optional<T> hmax = std::nullopt,
+        std::optional<T> h_start = std::nullopt
+    ) : RungeKuttaBase<RK32<T>, T, 2, 3>(atol, rtol, hmax, h_start) {}
+
+protected:
+
+    constexpr static std::array<T, 3> C{
+        T(0), T(1)/T(2), T(3)/T(4)
+    };
+    constexpr static std::array<std::array<T, 3>, 3> A{{
+        {T(0)     , T(0)     , T(0)},
+        {T(1)/T(2), T(0)     , T(0)},
+        {T(0)     , T(3)/T(4), T(0)}
+    }};
+    constexpr static std::array<T, 3> B{
+        T(2)/T(9), T(1)/T(3), T(4)/T(9)
+    };
+    constexpr static std::array<T, 4> E{
+        T(5)/T(72), T(-1)/T(12), T(-1)/T(9), T(1)/T(8)
+    };
+};
+
+/********************************************************************
  * @brief Runge-Kutta-Fehlberg 4(5) method.
  * 
  * Scheme order: 4
