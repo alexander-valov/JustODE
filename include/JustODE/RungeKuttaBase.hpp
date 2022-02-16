@@ -95,6 +95,8 @@ public:
      * @param[in] atol Absolute tolerance.
      * @param[in] rtol Relative tolerance.
      * @param[in] hmax Max step size.
+     * @param[in] h_start Start step size. If not specified or std::nullopt
+     *                    then initial step selected automatic.
      *********************************************************************/
     RungeKuttaBase(
         std::optional<T> atol = std::nullopt,
@@ -114,11 +116,12 @@ public:
                 'C' must be NStages array (std::array<T, NStages>),
                 'E' must be NStages     array (std::array<T, NStages>)     for a regular methods or
                             NStages + 1 array (std::array<T, NStages + 1>) for an extended error estimation.
-            )MESSAGE");
+            )MESSAGE"
+        );
 
-        SetAtol(atol.value_or(DefaultParams<T>::atol));
-        SetRtol(rtol.value_or(DefaultParams<T>::rtol));
-        SetHmax(hmax.value_or(DefaultParams<T>::hmax));
+        SetAtol(atol.value_or(detail::DefaultParams<T>::atol));
+        SetRtol(rtol.value_or(detail::DefaultParams<T>::rtol));
+        SetHmax(hmax.value_or(detail::DefaultParams<T>::hmax));
         SetHStart(h_start);
     }
 
@@ -151,10 +154,10 @@ public:
      *********************************************************************/
     template<class Callable, class... Args>
     ODEResult<T> Solve(
-        Callable&& rhs, const std::array<T, 2>& interval, const T& y0, Args&&... args
+        Callable&& rhs, const std::array<T, 2>& interval, const T& y0, std::tuple<Args...> args = std::tuple<>{}
     ) {
         static_assert(
-            std::is_invocable_r_v<T, Callable&&, T, T, Args&&...>,
+            std::is_invocable_r_v<T, Callable&&, T, T, Args...>,
             "Invalid signature or return type of the ODE right-hand-side!"
         );
 
@@ -165,7 +168,7 @@ public:
         // Right-hand side wrapper with nfev calculation support
         auto rhs_wrapper = [&](const T& t, const T& y) {
             nfev++;
-            return rhs(t, y, args...);
+            return std::apply(rhs, std::tuple_cat(std::tuple{t, y}, args));
         };
 
         // Initialization

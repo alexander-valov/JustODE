@@ -1,6 +1,6 @@
 #include <iostream>
 
-#include "JustODE/EmbeddedSolvers.hpp"
+#include "JustODE/JustODE.hpp"
 #include "matplot/matplot.h"
 
 template <class T>
@@ -26,7 +26,8 @@ void PrintResults(int flag, const std::vector<T>& tvals, const std::vector<T>& y
 
 int main() {
 
-    auto rhs = [&](double t, double y) {
+    auto rhs = [&](double t, double y, int& z) {
+        z += 1;
         return -2 * y + std::exp(-2 * (t - 6) * (t - 6));
     };
 
@@ -34,17 +35,24 @@ int main() {
         return 0.25 * std::exp(-2 * t) * (4 + std::sqrt(2 * M_PI) * std::exp(25.0 / 2.0) * (std::erf(13.0 / std::sqrt(2)) + std::erf((-13.0 + 2 * t) / std::sqrt(2))));
     };
 
-    auto solver = JustODE::RKF45<double>(1e-6, 1.0e-10, 1.0e10);
-    auto [tvals, yvals, flag, message, nfev] = solver.Solve(rhs, {0.0, 15.0}, 1.0);
+    int z_test = 0;
+
+    auto [tvals, yvals, flag, message, nfev] = JustODE::SolveIVP<double, JustODE::Methods::RKF45>(
+        rhs, {0.0, 15.0}, 1.0, 1e-6, 1e-10, std::nullopt, std::nullopt, std::make_tuple(std::ref(z_test))
+    );
     std::cout << "nfev: " << nfev << "\n";
     std::cout << "size: " << tvals.size() << "\n";
     PrintResults(flag, tvals, yvals);
+    std::cout << "\nz: " << z_test << "\n\n";
 
-    auto solverDOPR = JustODE::DOPRI54<double>(1.0e-6, 1.0e-10, 1.0e10);
-    auto [tvalsDOPR, yvalsDOPR, flagDOPR, messageDOPR, nfevDOPR] = solverDOPR.Solve(rhs, {0.0, 15.0}, 1.0);
+
+    auto [tvalsDOPR, yvalsDOPR, flagDOPR, messageDOPR, nfevDOPR] = JustODE::SolveIVP<double, JustODE::Methods::DOPRI54>(
+        rhs, {0.0, 15.0}, 1.0, 1e-6, 1e-10, std::nullopt, std::nullopt, std::make_tuple(std::ref(z_test))
+    );
     std::cout << "nfev: " << nfevDOPR << "\n";
     std::cout << "size: " << tvalsDOPR.size() << "\n";
     PrintResults(flagDOPR, tvalsDOPR, yvalsDOPR);
+    std::cout << "\nz: " << z_test << "\n\n";
 
     std::vector<double> exact_x = matplot::linspace(tvals.front(), tvals.back(), 300);
     std::vector<double> exact_y = matplot::transform(exact_x, exact_sol);
