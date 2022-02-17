@@ -8,7 +8,7 @@
 namespace JustODE {
 
 /********************************************************************
- * @brief Bogacki–Shampine 3(2) method.
+ * @brief Bogacki-Shampine 3(2) method.
  * 
  * Scheme order: 3
  * Error order: 2
@@ -116,7 +116,7 @@ protected:
 
 
 /********************************************************************
- * @brief Dormand–Prince 5(4) method.
+ * @brief Dormand-Prince 5(4) method.
  * 
  * Scheme order: 5
  * Error order: 4

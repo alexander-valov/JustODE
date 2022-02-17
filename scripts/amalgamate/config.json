@@ -1,0 +1,8 @@
+{
+    "project": "Just C++17 Library To Solve ODE",
+    "target": "../include_single/JustODE/JustODE.hpp",
+    "sources": [
+        "include/JustODE/JustODE.hpp"
+    ],
+    "include_paths": ["include"]
+}

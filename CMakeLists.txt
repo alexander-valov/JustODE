@@ -15,10 +15,26 @@ if (CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
 endif()
 
 # ---------------------------------------------------------------
+# Define options
+# ---------------------------------------------------------------
+if (POLICY CMP0077)
+    cmake_policy(SET CMP0077 NEW)
+endif()
+
+# option(JUST_ODE_BUILD_TESTS "Build the unit tests" ${JUST_ODE_MAIN_PROJECT})
+option(JUST_ODE_SINGLE_HEADER "Use single-header version" OFF)
+
+# ---------------------------------------------------------------
 # Define configuration
 # ---------------------------------------------------------------
 set(JUST_ODE_TARGET_NAME ${PROJECT_NAME})
-set(JUST_ODE_INCLUDE_BUILD_DIR "${PROJECT_SOURCE_DIR}/include")
+if (JUST_ODE_SINGLE_HEADER)
+    set(JUST_ODE_INCLUDE_BUILD_DIR "${PROJECT_SOURCE_DIR}/include_single")
+    message("  ${JUST_ODE_TARGET_NAME}: Using single-header version")
+else()
+    set(JUST_ODE_INCLUDE_BUILD_DIR "${PROJECT_SOURCE_DIR}/include")
+    message("  ${JUST_ODE_TARGET_NAME}: Using multi-header version")
+endif()
 
 # ---------------------------------------------------------------
 # Default build type
@@ -42,6 +58,14 @@ target_include_directories(
     $<BUILD_INTERFACE:${JUST_ODE_INCLUDE_BUILD_DIR}>
     $<INSTALL_INTERFACE:include>
 )
+
+# ---------------------------------------------------------------
+# Buld unit tests
+# ---------------------------------------------------------------
+# if (JUST_ODE_BUILD_TESTS)
+#     enable_testing()
+#     add_subdirectory(test)
+# endif()
 
 add_subdirectory(thirdparty/matplotplusplus)
 add_subdirectory(src)

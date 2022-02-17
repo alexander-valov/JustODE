@@ -33,10 +33,10 @@ int main() {
     std::array<double, 2> interval{0, 15};
     double y0 = 1;
     double atol = 1e-6;
-    double rtol = 1e-3;
+    double rtol = 1e-6;
 
 
-    std::cout << "\n\nRunge-Kutta 3(2):\n";
+    std::cout << "\n\nBogacki-Shampine 3(2):\n";
     auto [tvalsRK32, yvalsRK32, flagRK32, messageRK32, nfevRK32] = JustODE::SolveIVP<double, JustODE::Methods::RK32>(
         rhs, interval, y0, atol, rtol, std::nullopt, std::nullopt
     );
