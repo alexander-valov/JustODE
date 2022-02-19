@@ -201,9 +201,6 @@ public:
             if (t_ >= interval[1]) {
                 // calculation finished
                 flag = 0;
-            } else if (t_ + h_ > interval[1]) {
-                // trim time step
-                h_ = interval[1] - t_;
             }
         }
 
@@ -273,10 +270,18 @@ protected:
         );
 
         bool is_accepted = false;
+        bool is_rejected = false;
         while (!is_accepted) {
             // if the step size is too small, then the step is rejected 
             // and abort calculations
             if (h_ < hmin) { return false; }
+
+            // trim time step
+            T t_new = t_ + h_;
+            if (t_new - t_final > T(0)) {
+                t_new = t_final;
+            }
+            h_ = t_new - t_;
 
             // perform solving RK-step for current step-size and estimate error
             auto [y_new, f_new] = RKStep(rhs);
@@ -284,18 +289,24 @@ protected:
             T xi = ErrorEstimation(delta);
 
             if (xi <= 1) {
+                T scale = max_factor_;
+                if (xi != 0) {
+                    scale = std::min(max_factor_, safety_factor_ * std::pow(xi, -error_exponent_));
+                }
+                // if step rejected then 1 is used as max_factor 
+                if (is_rejected) { scale = std::min(T(1), scale); }
+                h_ = std::min(scale * h_, hmax_);
+
                 // step is accepted
                 is_accepted = true;
-                t_ = t_ + h_;
+                t_ = t_new;
                 f_ = f_new;
                 y_ = y_new;
+            } else {
+                T scale = std::max(min_factor_, safety_factor_ * std::pow(xi, -error_exponent_));
+                h_ = std::min(scale * h_, hmax_);
+                is_rejected = true;
             }
-            
-            // calculate new step size according to estimated error
-            T scale = max_factor_;
-            if (xi != 0) { scale = safety_factor_ * std::pow(xi, -error_exponent_); }
-            scale = std::clamp(scale, min_factor_, max_factor_);
-            h_ = std::min(scale * h_, hmax_);
         }
         return true;
     }
