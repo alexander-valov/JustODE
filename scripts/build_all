@@ -1,11 +1,20 @@
 #!/bin/bash
 
 # Input parameters
+IS_GENERATE_SINGLE_HEADER=true
 ROOT_FOLDER=".."
 CMAKE_BUILD_TYPE=Debug
 IS_INSTALL=true
 CMAKE_CXX_COMPILER=g++
 CMAKE_CXX_FLAGS="-m64 -Wall -pedantic"
+
+# Generate single header version
+if [ "$IS_GENERATE_SINGLE_HEADER" = true ]; then
+    printf %"s\n" "-------------------------------------------------------"
+    printf "Single header generation:\n\n"
+    source generate_single_header
+    printf %"s\n" "-------------------------------------------------------"
+fi
 
 # Build project
 cmake -S $ROOT_FOLDER -B $ROOT_FOLDER/build/$CMAKE_BUILD_TYPE \

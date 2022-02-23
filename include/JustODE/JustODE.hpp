@@ -34,7 +34,7 @@ namespace JustODE {
  * @brief List of available methods of ODE numerical integration.
  *********************************************************************/
 enum class Methods {
-    RK32,
+    RK32,       ///< Explicit Bogacki-Shampine 3(2)
     RKF45,      ///< Explicit Runge-Kutta-Fehlberf 4(5)
     DOPRI54     ///< Explicit Dormand-Prince 5(4)
 };
@@ -51,16 +51,18 @@ enum class Methods {
  * For the numerical integration provided the following methods:
  * 
  * - *DOPRI54* (default): Explicit Dormand-Prince method of order 5(4), [1].
- * - *RKF45*: Explicit Runge-Kutta-Fehlberg method of order 4(5), [2].
+ * - *RK32* : Explicit Bogacki-Shampine method of order 3(2), [2].
+ * - *RKF45*: Explicit Runge-Kutta-Fehlberg method of order 4(5), [3].
  * 
  * References:
  * 
  * - [1] J. R. Dormand, P. J. Prince, "A family of embedded Runge-Kutta
  *       formulae", Journal of Computational and Applied Mathematics
- * - [2] Fehlberg E. "Some experimental results concerning the error
+ * - [2] P. Bogacki, L.F. Shampine, "A 3(2) Pair of Runge-Kutta Formulas",
+ *       Appl. Math. Lett. Vol. 2, No. 4. pp. 321-325, 1989.
+ * - [3] Fehlberg E. "Some experimental results concerning the error
  *       propagation in Runge-Kutta type integration formulas",
  *       National Aeronautics and Space Administration, 1970
- * 
  * 
  * @tparam T Floating point type.
  * @tparam method Which method to use. Default is JustODE::Methods::DOPRI54.
@@ -77,16 +79,20 @@ enum class Methods {
  *                    std::nullopt then initial step selected automatic.
  * @return ODEResult<T> object
  *********************************************************************/
-template<class T, Methods method = Methods::DOPRI54, class Callable,
-         detail::IsFloatingPoint<T> = true>
+template<
+    Methods method = Methods::DOPRI54,
+    class T,
+    class Callable,
+    detail::IsFloatingPoint<T> = true
+>
 ODEResult<T> SolveIVP(
     Callable&& rhs,
     const std::array<T, 2>& interval,
     const T& y0,
-    std::optional<T> atol    = std::nullopt,
-    std::optional<T> rtol    = std::nullopt,
-    std::optional<T> hmax    = std::nullopt,
-    std::optional<T> h_start = std::nullopt
+    std::optional<detail::elem_type_t<decltype(interval)>> atol    = std::nullopt,
+    std::optional<detail::elem_type_t<decltype(interval)>> rtol    = std::nullopt,
+    std::optional<detail::elem_type_t<decltype(interval)>> hmax    = std::nullopt,
+    std::optional<detail::elem_type_t<decltype(interval)>> h_start = std::nullopt
 ) {
     if constexpr (method == Methods::RK32) {
         auto solver = RK32<T>(atol, rtol, hmax, h_start);

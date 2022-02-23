@@ -35,6 +35,7 @@
 
 
 #include <type_traits>
+#include <iterator>
 #include <limits>
 
 namespace JustODE {
@@ -97,6 +98,58 @@ namespace detail {
     struct promote_fp_3 { typedef std::remove_reference_t<decltype(TP1() + TP2() + TP3())> type; };
 
     // ---------------------------------------------------------
+    // Detection idiom
+    // C++17 compatible implementation of std::experimental::is_detected
+    // @see https://people.eecs.berkeley.edu/~brock/blog/detection_idiom.php
+    // @see https://blog.tartanllama.xyz/detection-idiom/
+    // ---------------------------------------------------------
+    namespace detect_detail {
+        template<template <class...> class Trait, class Enabler, class... Args>
+        struct is_detected : std::false_type{};
+
+        template<template <class...> class Trait, class... Args>
+        struct is_detected<Trait, std::void_t<Trait<Args...>>, Args...> : std::true_type{};
+    }
+    template<template <class...> class Trait, class... Args>
+    using is_detected = typename detect_detail::is_detected<Trait, void, Args...>::type;
+
+    // checks for std::size() method support
+    template<class T>
+    using method_size_t = decltype(std::size(std::declval<T>()));
+    template<class T>
+    using supports_size = is_detected<method_size_t, T>;
+
+    // checks for std::begin() method support
+    template<class T>
+    using method_begin_t = decltype(std::begin(std::declval<T>()));
+    template<class T>
+    using supports_begin = is_detected<method_begin_t, T>;
+
+    // checks for std::end() method support
+    template<class T>
+    using method_end_t = decltype(std::end(std::declval<T>()));
+    template<class T>
+    using supports_end = is_detected<method_end_t, T>;
+
+    // obtains element type of iterable container
+    template<class Container>
+    using elem_type_t = std::decay_t<decltype(*std::begin(std::declval<Container>()))>;
+
+    // checks are container elements real
+    template<class Container, class Real>
+    using is_real_type_data = std::is_same<Real, elem_type_t<Container>>;
+
+    // chacks for real container
+    template<class Container, class Real>
+    using is_real_container = std::conjunction<
+        std::is_floating_point<Real>,
+        supports_begin<Container>,
+        supports_end<Container>,
+        supports_size<Container>,
+        is_real_type_data<Container, Real>
+    >;
+
+    // ---------------------------------------------------------
     // Default parameters for embedded solvers
     // ---------------------------------------------------------
     template<class T, detail::IsFloatingPoint<T> = true>
@@ -111,12 +164,14 @@ namespace detail {
 // #include "RungeKuttaBase.hpp"
 
 
+#include <map>
 #include <cmath>
 #include <array>
 #include <vector>
 #include <utility>
 #include <numeric>
 #include <algorithm>
+#include <optional>
 
 // #include "Utils.hpp"
 
@@ -126,13 +181,13 @@ namespace JustODE {
 /********************************************************************
  * @brief Stores ODE solution *y(t)* and a solver iformation.
  *********************************************************************/
-template<class T, detail::IsFloatingPoint<T> = true>
+template<class T>
 struct ODEResult {
-    std::vector<T> t;    ///< The vector of t
-    std::vector<T> y;    ///< The vector of y
-    int status = 0;      ///< The solver termination status
-    std::string message; ///< Termination cause description
-    int nfev = 0;        ///< Number of RHS evaluations
+    std::vector<T> t;      ///< The vector of t
+    std::vector<T> y;      ///< The vector of y
+    int status = 0;        ///< The solver termination status
+    std::string message;   ///< Termination cause description
+    std::size_t nfev = 0;  ///< Number of RHS evaluations
 };
 
 /********************************************************************
@@ -319,7 +374,7 @@ public:
         // Save results
         ODEResult<T> result;
         result.status = flag;
-        result.message = messages_[flag];
+        result.message = messages_.at(flag);
         result.nfev = nfev;
         result.t = std::move(tvals);
         result.y = std::move(yvals);
@@ -480,9 +535,9 @@ protected:
     const T min_factor_ = T(0.2);                       ///< max step decreasing factor
     const T error_exponent_ = T(1) / (T(1) + ErrOrder); ///< error estimation exponent
 
-    const std::array<std::string, 2> messages_{
-        "Success",
-        "Terminated. Too small time step"
+    const std::map<int, std::string> messages_{
+        {0, "Success"},
+        {1, "Terminated. Too small time step"}
     }; ///< The array of possible solver messages
 };
 
@@ -661,7 +716,7 @@ namespace JustODE {
  * @brief List of available methods of ODE numerical integration.
  *********************************************************************/
 enum class Methods {
-    RK32,
+    RK32,       ///< Explicit Bogacki-Shampine 3(2)
     RKF45,      ///< Explicit Runge-Kutta-Fehlberf 4(5)
     DOPRI54     ///< Explicit Dormand-Prince 5(4)
 };
@@ -678,16 +733,18 @@ enum class Methods {
  * For the numerical integration provided the following methods:
  * 
  * - *DOPRI54* (default): Explicit Dormand-Prince method of order 5(4), [1].
- * - *RKF45*: Explicit Runge-Kutta-Fehlberg method of order 4(5), [2].
+ * - *RK32* : Explicit Bogacki-Shampine method of order 3(2), [2].
+ * - *RKF45*: Explicit Runge-Kutta-Fehlberg method of order 4(5), [3].
  * 
  * References:
  * 
  * - [1] J. R. Dormand, P. J. Prince, "A family of embedded Runge-Kutta
  *       formulae", Journal of Computational and Applied Mathematics
- * - [2] Fehlberg E. "Some experimental results concerning the error
+ * - [2] P. Bogacki, L.F. Shampine, "A 3(2) Pair of Runge-Kutta Formulas",
+ *       Appl. Math. Lett. Vol. 2, No. 4. pp. 321-325, 1989.
+ * - [3] Fehlberg E. "Some experimental results concerning the error
  *       propagation in Runge-Kutta type integration formulas",
  *       National Aeronautics and Space Administration, 1970
- * 
  * 
  * @tparam T Floating point type.
  * @tparam method Which method to use. Default is JustODE::Methods::DOPRI54.
@@ -704,16 +761,20 @@ enum class Methods {
  *                    std::nullopt then initial step selected automatic.
  * @return ODEResult<T> object
  *********************************************************************/
-template<class T, Methods method = Methods::DOPRI54, class Callable,
-         detail::IsFloatingPoint<T> = true>
+template<
+    Methods method = Methods::DOPRI54,
+    class T,
+    class Callable,
+    detail::IsFloatingPoint<T> = true
+>
 ODEResult<T> SolveIVP(
     Callable&& rhs,
     const std::array<T, 2>& interval,
     const T& y0,
-    std::optional<T> atol    = std::nullopt,
-    std::optional<T> rtol    = std::nullopt,
-    std::optional<T> hmax    = std::nullopt,
-    std::optional<T> h_start = std::nullopt
+    std::optional<detail::elem_type_t<decltype(interval)>> atol    = std::nullopt,
+    std::optional<detail::elem_type_t<decltype(interval)>> rtol    = std::nullopt,
+    std::optional<detail::elem_type_t<decltype(interval)>> hmax    = std::nullopt,
+    std::optional<detail::elem_type_t<decltype(interval)>> h_start = std::nullopt
 ) {
     if constexpr (method == Methods::RK32) {
         auto solver = RK32<T>(atol, rtol, hmax, h_start);

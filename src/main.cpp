@@ -37,7 +37,7 @@ int main() {
 
 
     std::cout << "\n\nBogacki-Shampine 3(2):\n";
-    auto [tvalsRK32, yvalsRK32, flagRK32, messageRK32, nfevRK32] = JustODE::SolveIVP<double, JustODE::Methods::RK32>(
+    auto [tvalsRK32, yvalsRK32, flagRK32, messageRK32, nfevRK32] = JustODE::SolveIVP<JustODE::Methods::RK32>(
         rhs, interval, y0, atol, rtol, std::nullopt, std::nullopt
     );
     std::cout << "nfev: " << nfevRK32 << "\n";
@@ -46,7 +46,7 @@ int main() {
 
 
     std::cout << "\n\nRunge-Kutta-Fehlberg 4(5):\n";
-    auto [tvalsRKF45, yvalsRKF45, flagRKF45, messageRKF45, nfevRKF45] = JustODE::SolveIVP<double, JustODE::Methods::RKF45>(
+    auto [tvalsRKF45, yvalsRKF45, flagRKF45, messageRKF45, nfevRKF45] = JustODE::SolveIVP<JustODE::Methods::RKF45>(
         rhs, interval, y0, atol, rtol, std::nullopt, std::nullopt
     );
     std::cout << "nfev: " << nfevRKF45 << "\n";
@@ -55,7 +55,7 @@ int main() {
 
 
     std::cout << "\n\nDormand-Prince 5(4):\n";
-    auto [tvalsDOPR, yvalsDOPR, flagDOPR, messageDOPR, nfevDOPR] = JustODE::SolveIVP<double, JustODE::Methods::DOPRI54>(
+    auto [tvalsDOPR, yvalsDOPR, flagDOPR, messageDOPR, nfevDOPR] = JustODE::SolveIVP<JustODE::Methods::DOPRI54>(
         rhs, interval, y0, atol, rtol, std::nullopt, std::nullopt
     );
     std::cout << "nfev: " << nfevDOPR << "\n";

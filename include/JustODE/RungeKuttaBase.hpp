@@ -1,11 +1,13 @@
 # pragma once
 
+#include <map>
 #include <cmath>
 #include <array>
 #include <vector>
 #include <utility>
 #include <numeric>
 #include <algorithm>
+#include <optional>
 
 #include "Utils.hpp"
 
@@ -14,13 +16,13 @@ namespace JustODE {
 /********************************************************************
  * @brief Stores ODE solution *y(t)* and a solver iformation.
  *********************************************************************/
-template<class T, detail::IsFloatingPoint<T> = true>
+template<class T>
 struct ODEResult {
-    std::vector<T> t;    ///< The vector of t
-    std::vector<T> y;    ///< The vector of y
-    int status = 0;      ///< The solver termination status
-    std::string message; ///< Termination cause description
-    int nfev = 0;        ///< Number of RHS evaluations
+    std::vector<T> t;      ///< The vector of t
+    std::vector<T> y;      ///< The vector of y
+    int status = 0;        ///< The solver termination status
+    std::string message;   ///< Termination cause description
+    std::size_t nfev = 0;  ///< Number of RHS evaluations
 };
 
 /********************************************************************
@@ -207,7 +209,7 @@ public:
         // Save results
         ODEResult<T> result;
         result.status = flag;
-        result.message = messages_[flag];
+        result.message = messages_.at(flag);
         result.nfev = nfev;
         result.t = std::move(tvals);
         result.y = std::move(yvals);
@@ -368,9 +370,9 @@ protected:
     const T min_factor_ = T(0.2);                       ///< max step decreasing factor
     const T error_exponent_ = T(1) / (T(1) + ErrOrder); ///< error estimation exponent
 
-    const std::array<std::string, 2> messages_{
-        "Success",
-        "Terminated. Too small time step"
+    const std::map<int, std::string> messages_{
+        {0, "Success"},
+        {1, "Terminated. Too small time step"}
     }; ///< The array of possible solver messages
 };
 
