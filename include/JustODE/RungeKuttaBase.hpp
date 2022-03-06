@@ -353,6 +353,64 @@ protected:
         );
     }
 
+    /// Coefficient-wise summation
+    template<class Container, detail::IsRealContainer<Container> = true>
+    Container PlusCwise(const Container& left, const Container& right) {
+        Container res = left;
+        auto first1 = std::begin(res);
+        auto last1  = std::end(res);
+        auto first2 = std::begin(right);
+        for (; first1 != last1; ++first1, (void)++first2) {
+            *first1 += *first2;
+        }
+        return res;
+    }
+    /// Coefficient-wise summation
+    template<class Container, detail::IsRealContainer<Container> = true>
+    Container PlusCwise(Container&& left, const Container& right) {
+        auto first1 = std::begin(left);
+        auto last1  = std::end(left);
+        auto first2 = std::begin(right);
+        for (; first1 != last1; ++first1, (void)++first2) {
+            *first1 += *first2;
+        }
+        return left;
+    }
+
+    /// Multiplies all coefficients by the given scalar
+    template<class Real, class Container, detail::IsFloatingPoint<Real> = true, detail::IsRealContainer<Container> = true>
+    Container MultScalar(const Container& container, const Real& scalar) {
+        Container res = container;
+        for (auto& elem : res) { elem *= scalar; }
+        return res;
+    }
+    /// Multiplies all coefficients by the given scalar
+    template<class Real, class Container, detail::IsFloatingPoint<Real> = true, detail::IsRealContainer<Container> = true>
+    Container MultScalar(const Real& scalar, const Container& container) {
+        return MultScalar(container, scalar);
+    }
+    /// Multiplies all coefficients by the given scalar
+    template<class Real, class Container, detail::IsFloatingPoint<Real> = true, detail::IsRealContainer<Container> = true>
+    Container MultScalar(Container&& container, const Real& scalar) {
+        for (auto& elem : container) { elem *= scalar; }
+        return container;
+    }
+    /// Multiplies all coefficients by the given scalar
+    template<class Real, class Container, detail::IsFloatingPoint<Real> = true, detail::IsRealContainer<Container> = true>
+    Container MultScalar(const Real& scalar, Container&& container) {
+        return MultScalar(container, scalar);
+    }
+
+    /// Computes 2-norm on the given container
+    template<class Container, detail::IsRealContainer<Container> = true>
+    T Norm(const Container& container) {
+        return std::sqrt(
+            std::transform_reduce(
+                std::begin(container), std::end(container), std::begin(container), T(0)
+            )
+        );
+    }
+
 protected:
     T atol_;                   ///< absolute tolerance
     T rtol_;                   ///< relative tolerance

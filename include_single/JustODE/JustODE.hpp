@@ -136,18 +136,20 @@ namespace detail {
     using elem_type_t = std::decay_t<decltype(*std::begin(std::declval<Container>()))>;
 
     // checks are container elements real
-    template<class Container, class Real>
-    using is_real_type_data = std::is_same<Real, elem_type_t<Container>>;
+    template<class Container>
+    using is_real_type_data = std::is_floating_point<elem_type_t<Container>>;
 
-    // chacks for real container
-    template<class Container, class Real>
+    // checks for real container
+    template<class Container>
     using is_real_container = std::conjunction<
-        std::is_floating_point<Real>,
         supports_begin<Container>,
         supports_end<Container>,
         supports_size<Container>,
-        is_real_type_data<Container, Real>
+        is_real_type_data<Container>
     >;
+
+    template<typename T>
+    using IsRealContainer = std::enable_if_t<is_real_container<T>::value, bool>;
 
     // ---------------------------------------------------------
     // Default parameters for embedded solvers
@@ -515,6 +517,64 @@ protected:
             h_ * std::inner_product(
                 Accessor::E.begin(), Accessor::E.end(), K_.begin(), T(0)
             ) / delta
+        );
+    }
+
+    /// Coefficient-wise summation
+    template<class Container, detail::IsRealContainer<Container> = true>
+    Container PlusCwise(const Container& left, const Container& right) {
+        Container res = left;
+        auto first1 = std::begin(res);
+        auto last1  = std::end(res);
+        auto first2 = std::begin(right);
+        for (; first1 != last1; ++first1, (void)++first2) {
+            *first1 += *first2;
+        }
+        return res;
+    }
+    /// Coefficient-wise summation
+    template<class Container, detail::IsRealContainer<Container> = true>
+    Container PlusCwise(Container&& left, const Container& right) {
+        auto first1 = std::begin(left);
+        auto last1  = std::end(left);
+        auto first2 = std::begin(right);
+        for (; first1 != last1; ++first1, (void)++first2) {
+            *first1 += *first2;
+        }
+        return left;
+    }
+
+    /// Multiplies all coefficients by the given scalar
+    template<class Real, class Container, detail::IsFloatingPoint<Real> = true, detail::IsRealContainer<Container> = true>
+    Container MultScalar(const Container& container, const Real& scalar) {
+        Container res = container;
+        for (auto& elem : res) { elem *= scalar; }
+        return res;
+    }
+    /// Multiplies all coefficients by the given scalar
+    template<class Real, class Container, detail::IsFloatingPoint<Real> = true, detail::IsRealContainer<Container> = true>
+    Container MultScalar(const Real& scalar, const Container& container) {
+        return MultScalar(container, scalar);
+    }
+    /// Multiplies all coefficients by the given scalar
+    template<class Real, class Container, detail::IsFloatingPoint<Real> = true, detail::IsRealContainer<Container> = true>
+    Container MultScalar(Container&& container, const Real& scalar) {
+        for (auto& elem : container) { elem *= scalar; }
+        return container;
+    }
+    /// Multiplies all coefficients by the given scalar
+    template<class Real, class Container, detail::IsFloatingPoint<Real> = true, detail::IsRealContainer<Container> = true>
+    Container MultScalar(const Real& scalar, Container&& container) {
+        return MultScalar(container, scalar);
+    }
+
+    /// Computes 2-norm on the given container
+    template<class Container, detail::IsRealContainer<Container> = true>
+    T Norm(const Container& container) {
+        return std::sqrt(
+            std::transform_reduce(
+                std::begin(container), std::end(container), std::begin(container), T(0)
+            )
         );
     }
 

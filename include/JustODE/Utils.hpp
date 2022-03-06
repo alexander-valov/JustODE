@@ -102,18 +102,20 @@ namespace detail {
     using elem_type_t = std::decay_t<decltype(*std::begin(std::declval<Container>()))>;
 
     // checks are container elements real
-    template<class Container, class Real>
-    using is_real_type_data = std::is_same<Real, elem_type_t<Container>>;
+    template<class Container>
+    using is_real_type_data = std::is_floating_point<elem_type_t<Container>>;
 
-    // chacks for real container
-    template<class Container, class Real>
+    // checks for real container
+    template<class Container>
     using is_real_container = std::conjunction<
-        std::is_floating_point<Real>,
         supports_begin<Container>,
         supports_end<Container>,
         supports_size<Container>,
-        is_real_type_data<Container, Real>
+        is_real_type_data<Container>
     >;
+
+    template<typename T>
+    using IsRealContainer = std::enable_if_t<is_real_container<T>::value, bool>;
 
     // ---------------------------------------------------------
     // Default parameters for embedded solvers
