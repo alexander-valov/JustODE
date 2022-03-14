@@ -185,11 +185,11 @@ namespace JustODE {
  *********************************************************************/
 template<class T>
 struct ODEResult {
-    std::vector<T> t;      ///< The vector of t
-    std::vector<T> y;      ///< The vector of y
-    int status = 0;        ///< The solver termination status
-    std::string message;   ///< Termination cause description
-    std::size_t nfev = 0;  ///< Number of RHS evaluations
+    std::vector<T> t;               ///< The vector of t
+    std::vector<std::vector<T>> y;  ///< The vector of y
+    int status = 0;                 ///< The solver termination status
+    std::string message;            ///< Termination cause description
+    std::size_t nfev = 0;           ///< Number of RHS evaluations
 };
 
 /********************************************************************
@@ -229,6 +229,7 @@ struct ODEResult {
  * 
  * @tparam Derived The type of derived class
  * @tparam T Floating point type
+ * @tparam Container Floating point data container
  * @tparam ErrOrder Error control order
  * @tparam NStages The number of stages of the Runge-Kutta method
  * 
@@ -239,8 +240,15 @@ struct ODEResult {
  * @see https://en.wikipedia.org/wiki/Runge%E2%80%93Kutta_methods
  * @see https://en.wikipedia.org/wiki/List_of_Runge%E2%80%93Kutta_methods
  *********************************************************************/
-template<class Derived, class T, std::size_t ErrOrder, std::size_t NStages,
-         detail::IsFloatingPoint<T> = true>
+template<
+    class Derived,
+    class T,
+    class Container,
+    std::size_t ErrOrder,
+    std::size_t NStages,
+    detail::IsFloatingPoint<T> = true,
+    detail::IsRealContainer<Container> = true
+>
 class RungeKuttaBase {
 
 private:
@@ -325,19 +333,23 @@ public:
      *********************************************************************/
     template<class Callable>
     ODEResult<T> Solve(
-        Callable&& rhs, const std::array<T, 2>& interval, const T& y0
+        Callable&& rhs, const std::array<T, 2>& interval, const Container& y0
     ) {
         static_assert(
-            std::is_invocable_r_v<T, Callable&&, const T&, const T&>,
+            std::is_invocable_r_v<Container, Callable&&, const T&, const Container&>,
             "Invalid signature or return type of the ODE right-hand-side!"
         );
 
+        // Number of differential equations
+        std::size_t n_eq = std::size(y0);
+
         int flag = -1;
         std::size_t nfev = 0;
-        std::vector<T> tvals, yvals;
+        std::vector<T> tvals;
+        std::vector<std::vector<T>> yvals(n_eq);
 
         // Right-hand side wrapper with nfev calculation support
-        auto rhs_wrapper = [&](const T& t, const T& y) {
+        auto rhs_wrapper = [&](const T& t, const Container& y) {
             nfev++;
             return rhs(t, y);
         };
@@ -352,7 +364,10 @@ public:
             h_ = h_start_.value();
         }
         tvals.push_back(t_);
-        yvals.push_back(y_);
+        for (std::size_t i = 0; i < n_eq; i++) {
+            auto it = std::next(std::begin(y_), i);
+            yvals[i].push_back(*it);
+        }
 
         // Main integration loop
         while (flag == -1) {
@@ -361,7 +376,10 @@ public:
             if (step_state) {
                 // current step accepted
                 tvals.push_back(t_);
-                yvals.push_back(y_);
+                for (std::size_t i = 0; i < n_eq; i++) {
+                    auto it = std::next(std::begin(y_), i);
+                    yvals[i].push_back(*it);
+                }
             } else {
                 // current step rejected: step size h_ less than hmin
                 flag = 1;
@@ -394,19 +412,19 @@ protected:
      * @return Initial step size
      *********************************************************************/
     template<class Callable>
-    T CalcInitialStep(Callable&& rhs, const T& t0, const T& y0, const T& f0) {
+    T CalcInitialStep(Callable&& rhs, const T& t0, const Container& y0, const Container& f0) {
         // calculate step for second derivative approximation
-        T scale = atol_ + std::abs(y0) * rtol_;
-        T d0 = std::abs(y0 / scale);
-        T d1 = std::abs(f0 / scale);
+        Container scale = PlusScalar(atol_, MultScalar(AbsCwise(y0), rtol_));
+        T d0 = RMSNorm(DivCwise(y0, scale));
+        T d1 = RMSNorm(DivCwise(f0, scale));
         T h0;
         if (d0 < T(1e-5) || d1 < T(1e-5)) { h0 = T(1e-6); }
         else { h0 = T(0.01) * d0 / d1; }
 
         // second derivative approximation
-        T y1 = y0 + h0 * f0;
-        T f1 = rhs(t0 + h0, y1);
-        T d2 = std::abs((f1 - f0) / scale) / h0;
+        Container y1 = PlusCwise(y0, MultScalar(h0, f0));
+        Container f1 = rhs(t0 + h0, y1);
+        T d2 = RMSNorm(DivCwise(MinusCwise(f1, f0), scale)) / h0;
 
         T h1;
         if (d1 <= T(1e-15) && d2 <= T(1e-15)) {
@@ -454,7 +472,7 @@ protected:
 
             // perform solving RK-step for current step-size and estimate error
             auto [y_new, f_new] = RKStep(rhs);
-            T delta = atol_ + std::max(std::abs(y_), std::abs(y_new)) * rtol_;
+            Container delta = PlusScalar(atol_, MultScalar(MaxCwise(AbsCwise(y_), AbsCwise(y_new)), rtol_));
             T xi = ErrorEstimation(delta);
 
             if (xi <= 1) {
@@ -486,20 +504,16 @@ protected:
      * @return Solution for the current step
      *********************************************************************/
     template<class Callable>
-    std::pair<T, T> RKStep(Callable&& rhs) {
+    std::pair<Container, Container> RKStep(Callable&& rhs) {
         K_[0] = f_;
         for (std::size_t i = 1; i < NStages; i++) {
-            auto it = std::next(Accessor::A[i].begin(), i);
-            T dy = h_ * std::inner_product(
-                Accessor::A[i].begin(), it, K_.begin(), T(0)
-            );
-            K_[i] = rhs(t_ + Accessor::C[i] * h_, y_ + dy);
+            Container dy = MultScalar(h_, KTDot(Accessor::A[i], i));
+            K_[i] = rhs(t_ + Accessor::C[i] * h_, PlusCwise(y_, dy));
         }
 
-        T y_new = y_ + h_ * std::inner_product(
-            Accessor::B.begin(), Accessor::B.end(), K_.begin(), T(0)
-        );
-        T f_new = rhs(t_ + h_, y_new);
+        Container KTDotB = KTDot(Accessor::B, Accessor::B.size());
+        Container y_new = PlusCwise(y_, MultScalar(h_, KTDotB));
+        Container f_new = rhs(t_ + h_, y_new);
 
         // Last stage calculation for the extended error estimation submatrix E
         K_.back() = f_new;
@@ -512,16 +526,59 @@ protected:
      * @param[in] delta Error scaling
      * @return Error estimation
      *********************************************************************/
-    T ErrorEstimation(const T& delta) {
-        return std::abs(
-            h_ * std::inner_product(
-                Accessor::E.begin(), Accessor::E.end(), K_.begin(), T(0)
-            ) / delta
-        );
+    T ErrorEstimation(const Container& delta) {
+        Container KTDotE = KTDot(Accessor::E, Accessor::E.size());
+        return RMSNorm(DivCwise(MultScalar(h_, KTDotE), delta));
+    }
+
+    /********************************************************************
+     * @brief Compute dot product dot(K_.transpose(), array[:n_stages]).
+     * @param[in] array Butcher tableau submatrix std::array
+     * @param[in] n_stages Number of RK stages for dot product
+     * @return dot(K_.transpose(), array[:n_stages])
+     *********************************************************************/
+    template<class Array>
+    Container KTDot(const Array& array, std::size_t n_stages) {
+        Container result = y_;
+        auto res_it = result.begin();
+        // loop over K_ columns (ODE equations)
+        for (std::size_t ic = 0; ic < std::size(result); ic++) {
+            T init = T(0);
+            // loop over K_ rows (RK stages)
+            for (std::size_t ir = 0; ir < n_stages; ir++) {
+                auto iter = std::next(K_[ir].begin(), ic);
+                init += array[ir] * (*iter);
+            }
+            *res_it = init;
+            ++res_it;
+        }
+        return result;
+    }
+
+    // Coefficient-wise abs
+    Container AbsCwise(const Container& container) {
+        Container result = container;
+        for (auto& item : result) {
+            item = std::abs(item);
+        }
+        return result;
+    }
+
+    /// Coefficient-wise maximum
+    Container MaxCwise(const Container& left, const Container& right) {
+        Container res = left;
+        auto first1 = std::begin(res);
+        auto last1  = std::end(res);
+        auto first2 = std::begin(right);
+        for (; first1 != last1; ++first1, (void)++first2) {
+            if (*first2 > *first1) {
+                *first1 = *first2;
+            }
+        }
+        return res;
     }
 
     /// Coefficient-wise summation
-    template<class Container, detail::IsRealContainer<Container> = true>
     Container PlusCwise(const Container& left, const Container& right) {
         Container res = left;
         auto first1 = std::begin(res);
@@ -533,7 +590,6 @@ protected:
         return res;
     }
     /// Coefficient-wise summation
-    template<class Container, detail::IsRealContainer<Container> = true>
     Container PlusCwise(Container&& left, const Container& right) {
         auto first1 = std::begin(left);
         auto last1  = std::end(left);
@@ -544,37 +600,96 @@ protected:
         return left;
     }
 
+    /// Coefficient-wise subtraction
+    Container MinusCwise(const Container& left, const Container& right) {
+        Container res = left;
+        auto first1 = std::begin(res);
+        auto last1  = std::end(res);
+        auto first2 = std::begin(right);
+        for (; first1 != last1; ++first1, (void)++first2) {
+            *first1 -= *first2;
+        }
+        return res;
+    }
+    /// Coefficient-wise subtraction
+    Container MinusCwise(Container&& left, const Container& right) {
+        auto first1 = std::begin(left);
+        auto last1  = std::end(left);
+        auto first2 = std::begin(right);
+        for (; first1 != last1; ++first1, (void)++first2) {
+            *first1 -= *first2;
+        }
+        return left;
+    }
+
+    /// Coefficient-wise division
+    Container DivCwise(const Container& left, const Container& right) {
+        Container res = left;
+        auto first1 = std::begin(res);
+        auto last1  = std::end(res);
+        auto first2 = std::begin(right);
+        for (; first1 != last1; ++first1, (void)++first2) {
+            *first1 /= *first2;
+        }
+        return res;
+    }
+    /// Coefficient-wise division
+    Container DivCwise(Container&& left, const Container& right) {
+        auto first1 = std::begin(left);
+        auto last1  = std::end(left);
+        auto first2 = std::begin(right);
+        for (; first1 != last1; ++first1, (void)++first2) {
+            *first1 /= *first2;
+        }
+        return left;
+    }
+
     /// Multiplies all coefficients by the given scalar
-    template<class Real, class Container, detail::IsFloatingPoint<Real> = true, detail::IsRealContainer<Container> = true>
-    Container MultScalar(const Container& container, const Real& scalar) {
+    Container MultScalar(const Container& container, const T& scalar) {
         Container res = container;
         for (auto& elem : res) { elem *= scalar; }
         return res;
     }
     /// Multiplies all coefficients by the given scalar
-    template<class Real, class Container, detail::IsFloatingPoint<Real> = true, detail::IsRealContainer<Container> = true>
-    Container MultScalar(const Real& scalar, const Container& container) {
+    Container MultScalar(const T& scalar, const Container& container) {
         return MultScalar(container, scalar);
     }
     /// Multiplies all coefficients by the given scalar
-    template<class Real, class Container, detail::IsFloatingPoint<Real> = true, detail::IsRealContainer<Container> = true>
-    Container MultScalar(Container&& container, const Real& scalar) {
+    Container MultScalar(Container&& container, const T& scalar) {
         for (auto& elem : container) { elem *= scalar; }
         return container;
     }
     /// Multiplies all coefficients by the given scalar
-    template<class Real, class Container, detail::IsFloatingPoint<Real> = true, detail::IsRealContainer<Container> = true>
-    Container MultScalar(const Real& scalar, Container&& container) {
+    Container MultScalar(const T& scalar, Container&& container) {
         return MultScalar(container, scalar);
     }
 
-    /// Computes 2-norm on the given container
-    template<class Container, detail::IsRealContainer<Container> = true>
-    T Norm(const Container& container) {
+    /// Add the given scalar to all coefficients
+    Container PlusScalar(const Container& container, const T& scalar) {
+        Container res = container;
+        for (auto& elem : res) { elem += scalar; }
+        return res;
+    }
+    /// Add the given scalar to all coefficients
+    Container PlusScalar(const T& scalar, const Container& container) {
+        return PlusScalar(container, scalar);
+    }
+    /// Add the given scalar to all coefficients
+    Container PlusScalar(Container&& container, const T& scalar) {
+        for (auto& elem : container) { elem += scalar; }
+        return container;
+    }
+    /// Add the given scalar to all coefficients
+    Container PlusScalar(const T& scalar, Container&& container) {
+        return PlusScalar(container, scalar);
+    }
+
+    /// Computes Root Mean Square norm on the given container
+    T RMSNorm(const Container& container) {
         return std::sqrt(
             std::transform_reduce(
                 std::begin(container), std::end(container), std::begin(container), T(0)
-            )
+            ) / std::size(container)
         );
     }
 
@@ -584,11 +699,11 @@ protected:
     T hmax_;                   ///< max step size
     std::optional<T> h_start_; ///< optional start step size
 
-    T h_;                            ///< current step size
-    T t_;                            ///< current time
-    T f_;                            ///< current rhs
-    T y_;                            ///< current sulution
-    std::array<T, NStages + 1> K_{}; ///< current coefficients for stages
+    T h_;                                    ///< current step size
+    T t_;                                    ///< current time
+    Container f_;                            ///< current rhs
+    Container y_;                            ///< current sulution
+    std::array<Container, NStages + 1> K_{}; ///< current coefficients for stages
 
     const T safety_factor_ = T(0.9);                    ///< safety factor
     const T max_factor_ = T(10);                        ///< max step increasing factor
@@ -620,8 +735,8 @@ namespace JustODE {
  * @see https://www.sciencedirect.com/science/article/pii/0893965989900797
  * @see https://en.wikipedia.org/wiki/Bogacki%E2%80%93Shampine_method
  *********************************************************************/
-template<class T, detail::IsFloatingPoint<T> = true>
-class RK32: public RungeKuttaBase<RK32<T>, T, 2, 3> {
+template<class T, class Container, detail::IsFloatingPoint<T> = true, detail::IsRealContainer<Container> = true>
+class RK32: public RungeKuttaBase<RK32<T, Container>, T, Container, 2, 3> {
 
 public:
 
@@ -636,7 +751,7 @@ public:
         std::optional<T> rtol = std::nullopt,
         std::optional<T> hmax = std::nullopt,
         std::optional<T> h_start = std::nullopt
-    ) : RungeKuttaBase<RK32<T>, T, 2, 3>(atol, rtol, hmax, h_start) {}
+    ) : RungeKuttaBase<RK32<T, Container>, T, Container, 2, 3>(atol, rtol, hmax, h_start) {}
 
 protected:
 
@@ -673,8 +788,8 @@ protected:
  * @see https://en.wikipedia.org/wiki/Runge%E2%80%93Kutta%E2%80%93Fehlberg_method
  * @see https://www.johndcook.com/blog/2020/02/19/fehlberg/
  *********************************************************************/
-template<class T, detail::IsFloatingPoint<T> = true>
-class RKF45: public RungeKuttaBase<RKF45<T>, T, 4, 6> {
+template<class T, class Container, detail::IsFloatingPoint<T> = true, detail::IsRealContainer<Container> = true>
+class RKF45: public RungeKuttaBase<RKF45<T, Container>, T, Container, 4, 6> {
 
 public:
 
@@ -689,7 +804,7 @@ public:
         std::optional<T> rtol = std::nullopt,
         std::optional<T> hmax = std::nullopt,
         std::optional<T> h_start = std::nullopt
-    ) : RungeKuttaBase<RKF45<T>, T, 4, 6>(atol, rtol, hmax, h_start) {}
+    ) : RungeKuttaBase<RKF45<T, Container>, T, Container, 4, 6>(atol, rtol, hmax, h_start) {}
 
 protected:
 
@@ -729,8 +844,8 @@ protected:
  * @see https://en.wikipedia.org/wiki/Dormand%E2%80%93Prince_method
  * @see https://www.johndcook.com/blog/2020/02/19/dormand-prince/
  *********************************************************************/
-template<class T, detail::IsFloatingPoint<T> = true>
-class DOPRI54: public RungeKuttaBase<DOPRI54<T>, T, 4, 6> {
+template<class T, class Container, detail::IsFloatingPoint<T> = true, detail::IsRealContainer<Container> = true>
+class DOPRI54: public RungeKuttaBase<DOPRI54<T, Container>, T, Container, 4, 6> {
 
 public:
 
@@ -745,7 +860,7 @@ public:
         std::optional<T> rtol = std::nullopt,
         std::optional<T> hmax = std::nullopt,
         std::optional<T> h_start = std::nullopt
-    ) : RungeKuttaBase<DOPRI54<T>, T, 4, 6>(atol, rtol, hmax, h_start) {}
+    ) : RungeKuttaBase<DOPRI54<T, Container>, T, Container, 4, 6>(atol, rtol, hmax, h_start) {}
 
 protected:
 
@@ -824,26 +939,28 @@ enum class Methods {
 template<
     Methods method = Methods::DOPRI54,
     class T,
+    class Container,
     class Callable,
-    detail::IsFloatingPoint<T> = true
+    detail::IsFloatingPoint<T> = true,
+    detail::IsRealContainer<Container> = true
 >
 ODEResult<T> SolveIVP(
     Callable&& rhs,
     const std::array<T, 2>& interval,
-    const T& y0,
+    const Container& y0,
     std::optional<detail::elem_type_t<decltype(interval)>> atol    = std::nullopt,
     std::optional<detail::elem_type_t<decltype(interval)>> rtol    = std::nullopt,
     std::optional<detail::elem_type_t<decltype(interval)>> hmax    = std::nullopt,
     std::optional<detail::elem_type_t<decltype(interval)>> h_start = std::nullopt
 ) {
     if constexpr (method == Methods::RK32) {
-        auto solver = RK32<T>(atol, rtol, hmax, h_start);
+        auto solver = RK32<T, Container>(atol, rtol, hmax, h_start);
         return solver.Solve(rhs, interval, y0);
     } else if constexpr (method == Methods::RKF45) {
-        auto solver = RKF45<T>(atol, rtol, hmax, h_start);
+        auto solver = RKF45<T, Container>(atol, rtol, hmax, h_start);
         return solver.Solve(rhs, interval, y0);
     } else if constexpr (method == Methods::DOPRI54) {
-        auto solver = DOPRI54<T>(atol, rtol, hmax, h_start);
+        auto solver = DOPRI54<T, Container>(atol, rtol, hmax, h_start);
         return solver.Solve(rhs, interval, y0);
     } else {
         static_assert(

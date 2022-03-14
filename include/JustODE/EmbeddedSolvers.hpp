@@ -22,8 +22,8 @@ namespace JustODE {
  * @see https://www.sciencedirect.com/science/article/pii/0893965989900797
  * @see https://en.wikipedia.org/wiki/Bogacki%E2%80%93Shampine_method
  *********************************************************************/
-template<class T, detail::IsFloatingPoint<T> = true>
-class RK32: public RungeKuttaBase<RK32<T>, T, 2, 3> {
+template<class T, class Container, detail::IsFloatingPoint<T> = true, detail::IsRealContainer<Container> = true>
+class RK32: public RungeKuttaBase<RK32<T, Container>, T, Container, 2, 3> {
 
 public:
 
@@ -38,7 +38,7 @@ public:
         std::optional<T> rtol = std::nullopt,
         std::optional<T> hmax = std::nullopt,
         std::optional<T> h_start = std::nullopt
-    ) : RungeKuttaBase<RK32<T>, T, 2, 3>(atol, rtol, hmax, h_start) {}
+    ) : RungeKuttaBase<RK32<T, Container>, T, Container, 2, 3>(atol, rtol, hmax, h_start) {}
 
 protected:
 
@@ -75,8 +75,8 @@ protected:
  * @see https://en.wikipedia.org/wiki/Runge%E2%80%93Kutta%E2%80%93Fehlberg_method
  * @see https://www.johndcook.com/blog/2020/02/19/fehlberg/
  *********************************************************************/
-template<class T, detail::IsFloatingPoint<T> = true>
-class RKF45: public RungeKuttaBase<RKF45<T>, T, 4, 6> {
+template<class T, class Container, detail::IsFloatingPoint<T> = true, detail::IsRealContainer<Container> = true>
+class RKF45: public RungeKuttaBase<RKF45<T, Container>, T, Container, 4, 6> {
 
 public:
 
@@ -91,7 +91,7 @@ public:
         std::optional<T> rtol = std::nullopt,
         std::optional<T> hmax = std::nullopt,
         std::optional<T> h_start = std::nullopt
-    ) : RungeKuttaBase<RKF45<T>, T, 4, 6>(atol, rtol, hmax, h_start) {}
+    ) : RungeKuttaBase<RKF45<T, Container>, T, Container, 4, 6>(atol, rtol, hmax, h_start) {}
 
 protected:
 
@@ -131,8 +131,8 @@ protected:
  * @see https://en.wikipedia.org/wiki/Dormand%E2%80%93Prince_method
  * @see https://www.johndcook.com/blog/2020/02/19/dormand-prince/
  *********************************************************************/
-template<class T, detail::IsFloatingPoint<T> = true>
-class DOPRI54: public RungeKuttaBase<DOPRI54<T>, T, 4, 6> {
+template<class T, class Container, detail::IsFloatingPoint<T> = true, detail::IsRealContainer<Container> = true>
+class DOPRI54: public RungeKuttaBase<DOPRI54<T, Container>, T, Container, 4, 6> {
 
 public:
 
@@ -147,7 +147,7 @@ public:
         std::optional<T> rtol = std::nullopt,
         std::optional<T> hmax = std::nullopt,
         std::optional<T> h_start = std::nullopt
-    ) : RungeKuttaBase<DOPRI54<T>, T, 4, 6>(atol, rtol, hmax, h_start) {}
+    ) : RungeKuttaBase<DOPRI54<T, Container>, T, Container, 4, 6>(atol, rtol, hmax, h_start) {}
 
 protected:
 

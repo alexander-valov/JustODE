@@ -82,26 +82,28 @@ enum class Methods {
 template<
     Methods method = Methods::DOPRI54,
     class T,
+    class Container,
     class Callable,
-    detail::IsFloatingPoint<T> = true
+    detail::IsFloatingPoint<T> = true,
+    detail::IsRealContainer<Container> = true
 >
 ODEResult<T> SolveIVP(
     Callable&& rhs,
     const std::array<T, 2>& interval,
-    const T& y0,
+    const Container& y0,
     std::optional<detail::elem_type_t<decltype(interval)>> atol    = std::nullopt,
     std::optional<detail::elem_type_t<decltype(interval)>> rtol    = std::nullopt,
     std::optional<detail::elem_type_t<decltype(interval)>> hmax    = std::nullopt,
     std::optional<detail::elem_type_t<decltype(interval)>> h_start = std::nullopt
 ) {
     if constexpr (method == Methods::RK32) {
-        auto solver = RK32<T>(atol, rtol, hmax, h_start);
+        auto solver = RK32<T, Container>(atol, rtol, hmax, h_start);
         return solver.Solve(rhs, interval, y0);
     } else if constexpr (method == Methods::RKF45) {
-        auto solver = RKF45<T>(atol, rtol, hmax, h_start);
+        auto solver = RKF45<T, Container>(atol, rtol, hmax, h_start);
         return solver.Solve(rhs, interval, y0);
     } else if constexpr (method == Methods::DOPRI54) {
-        auto solver = DOPRI54<T>(atol, rtol, hmax, h_start);
+        auto solver = DOPRI54<T, Container>(atol, rtol, hmax, h_start);
         return solver.Solve(rhs, interval, y0);
     } else {
         static_assert(
