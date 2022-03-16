@@ -21,6 +21,7 @@ cmake -S $ROOT_FOLDER -B $ROOT_FOLDER/build/$CMAKE_BUILD_TYPE \
     -DCMAKE_CXX_COMPILER=$CMAKE_CXX_COMPILER \
     -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
     -DCMAKE_INSTALL_PREFIX=$ROOT_FOLDER/build_install/$CMAKE_BUILD_TYPE \
+    -DJUST_ODE_BUILD_TESTS=ON \
     -DCMAKE_CXX_FLAGS="$CMAKE_CXX_FLAGS"
 cmake --build $ROOT_FOLDER/build/$CMAKE_BUILD_TYPE --parallel 6
 
@@ -28,3 +29,8 @@ cmake --build $ROOT_FOLDER/build/$CMAKE_BUILD_TYPE --parallel 6
 if [ "$IS_INSTALL" = true ]; then
     cmake --install $ROOT_FOLDER/build/$CMAKE_BUILD_TYPE
 fi
+
+# Run tests
+cd $ROOT_FOLDER/build/$CMAKE_BUILD_TYPE
+ctest
+cd ../..

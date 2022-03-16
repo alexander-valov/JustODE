@@ -21,7 +21,7 @@ if (POLICY CMP0077)
     cmake_policy(SET CMP0077 NEW)
 endif()
 
-# option(JUST_ODE_BUILD_TESTS "Build the unit tests" ${JUST_ODE_MAIN_PROJECT})
+option(JUST_ODE_BUILD_TESTS "Build the unit tests" ${JUST_ODE_MAIN_PROJECT})
 option(JUST_ODE_SINGLE_HEADER "Use single-header version" OFF)
 
 # ---------------------------------------------------------------
@@ -62,10 +62,7 @@ target_include_directories(
 # ---------------------------------------------------------------
 # Buld unit tests
 # ---------------------------------------------------------------
-# if (JUST_ODE_BUILD_TESTS)
-#     enable_testing()
-#     add_subdirectory(test)
-# endif()
-
-add_subdirectory(thirdparty/matplotplusplus)
-add_subdirectory(src)
+if (JUST_ODE_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
