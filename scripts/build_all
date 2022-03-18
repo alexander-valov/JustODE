@@ -3,8 +3,8 @@
 # Input parameters
 IS_GENERATE_SINGLE_HEADER=true
 ROOT_FOLDER=".."
-CMAKE_BUILD_TYPE=Debug
-IS_INSTALL=true
+CMAKE_BUILD_TYPE=Release
+IS_INSTALL=false
 CMAKE_CXX_COMPILER=g++
 CMAKE_CXX_FLAGS="-m64 -Wall -pedantic"
 
