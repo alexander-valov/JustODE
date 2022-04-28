@@ -4,12 +4,14 @@
 #include <cmath>
 #include <array>
 #include <vector>
+#include <limits>
 #include <utility>
 #include <numeric>
 #include <algorithm>
 #include <optional>
 
-#include "Utils.hpp"
+#include "Utils/TraitsHelper.hpp"
+#include "Utils/Operations.hpp"
 
 namespace JustODE {
 
@@ -24,6 +26,8 @@ struct ODEResult {
     std::string message;            ///< Termination cause description
     std::size_t nfev = 0;           ///< Number of RHS evaluations
 };
+
+namespace detail {
 
 /********************************************************************
  * @brief Adaptive explicit Runge-Kutta algorithm base class.
@@ -79,8 +83,8 @@ template<
     class Container,
     std::size_t ErrOrder,
     std::size_t NStages,
-    detail::IsFloatingPoint<T> = true,
-    detail::IsRealContainer<Container> = true
+    type_traits::IsFloatingPoint<T> = true,
+    type_traits::IsRealContainer<Container> = true
 >
 class RungeKuttaBase {
 
@@ -129,9 +133,9 @@ public:
             )MESSAGE"
         );
 
-        SetAtol(atol.value_or(detail::DefaultParams<T>::atol));
-        SetRtol(rtol.value_or(detail::DefaultParams<T>::rtol));
-        SetHmax(hmax.value_or(detail::DefaultParams<T>::hmax));
+        SetAtol(atol.value_or(T(1e-6)));
+        SetRtol(rtol.value_or(T(1e-3)));
+        SetHmax(hmax.value_or(std::numeric_limits<T>::max()));
         SetHStart(h_start);
     }
 
@@ -248,8 +252,8 @@ protected:
     T CalcInitialStep(Callable&& rhs, const T& t0, const Container& y0, const Container& f0) {
         // calculate step for second derivative approximation
         Container scale = PlusScalar(atol_, MultScalar(AbsCwise(y0), rtol_));
-        T d0 = RMSNorm(DivCwise(y0, scale));
-        T d1 = RMSNorm(DivCwise(f0, scale));
+        T d0 = RMSNorm(DivCwise(y0, scale), T(0));
+        T d1 = RMSNorm(DivCwise(f0, scale), T(0));
         T h0;
         if (d0 < T(1e-5) || d1 < T(1e-5)) { h0 = T(1e-6); }
         else { h0 = T(0.01) * d0 / d1; }
@@ -257,7 +261,7 @@ protected:
         // second derivative approximation
         Container y1 = PlusCwise(y0, MultScalar(h0, f0));
         Container f1 = rhs(t0 + h0, y1);
-        T d2 = RMSNorm(DivCwise(MinusCwise(f1, f0), scale)) / h0;
+        T d2 = RMSNorm(DivCwise(MinusCwise(f1, f0), scale), T(0)) / h0;
 
         T h1;
         if (d1 <= T(1e-15) && d2 <= T(1e-15)) {
@@ -361,7 +365,7 @@ protected:
      *********************************************************************/
     T ErrorEstimation(const Container& delta) {
         Container KTDotE = KTDot(Accessor::E, Accessor::E.size());
-        return RMSNorm(DivCwise(MultScalar(h_, KTDotE), delta));
+        return RMSNorm(DivCwise(MultScalar(h_, KTDotE), delta), T(0));
     }
 
     /********************************************************************
@@ -388,144 +392,6 @@ protected:
         return result;
     }
 
-    // Coefficient-wise abs
-    Container AbsCwise(const Container& container) {
-        Container result = container;
-        for (auto& item : result) {
-            item = std::abs(item);
-        }
-        return result;
-    }
-
-    /// Coefficient-wise maximum
-    Container MaxCwise(const Container& left, const Container& right) {
-        Container res = left;
-        auto first1 = std::begin(res);
-        auto last1  = std::end(res);
-        auto first2 = std::begin(right);
-        for (; first1 != last1; ++first1, (void)++first2) {
-            if (*first2 > *first1) {
-                *first1 = *first2;
-            }
-        }
-        return res;
-    }
-
-    /// Coefficient-wise summation
-    Container PlusCwise(const Container& left, const Container& right) {
-        Container res = left;
-        auto first1 = std::begin(res);
-        auto last1  = std::end(res);
-        auto first2 = std::begin(right);
-        for (; first1 != last1; ++first1, (void)++first2) {
-            *first1 += *first2;
-        }
-        return res;
-    }
-    /// Coefficient-wise summation
-    Container PlusCwise(Container&& left, const Container& right) {
-        auto first1 = std::begin(left);
-        auto last1  = std::end(left);
-        auto first2 = std::begin(right);
-        for (; first1 != last1; ++first1, (void)++first2) {
-            *first1 += *first2;
-        }
-        return left;
-    }
-
-    /// Coefficient-wise subtraction
-    Container MinusCwise(const Container& left, const Container& right) {
-        Container res = left;
-        auto first1 = std::begin(res);
-        auto last1  = std::end(res);
-        auto first2 = std::begin(right);
-        for (; first1 != last1; ++first1, (void)++first2) {
-            *first1 -= *first2;
-        }
-        return res;
-    }
-    /// Coefficient-wise subtraction
-    Container MinusCwise(Container&& left, const Container& right) {
-        auto first1 = std::begin(left);
-        auto last1  = std::end(left);
-        auto first2 = std::begin(right);
-        for (; first1 != last1; ++first1, (void)++first2) {
-            *first1 -= *first2;
-        }
-        return left;
-    }
-
-    /// Coefficient-wise division
-    Container DivCwise(const Container& left, const Container& right) {
-        Container res = left;
-        auto first1 = std::begin(res);
-        auto last1  = std::end(res);
-        auto first2 = std::begin(right);
-        for (; first1 != last1; ++first1, (void)++first2) {
-            *first1 /= *first2;
-        }
-        return res;
-    }
-    /// Coefficient-wise division
-    Container DivCwise(Container&& left, const Container& right) {
-        auto first1 = std::begin(left);
-        auto last1  = std::end(left);
-        auto first2 = std::begin(right);
-        for (; first1 != last1; ++first1, (void)++first2) {
-            *first1 /= *first2;
-        }
-        return left;
-    }
-
-    /// Multiplies all coefficients by the given scalar
-    Container MultScalar(const Container& container, const T& scalar) {
-        Container res = container;
-        for (auto& elem : res) { elem *= scalar; }
-        return res;
-    }
-    /// Multiplies all coefficients by the given scalar
-    Container MultScalar(const T& scalar, const Container& container) {
-        return MultScalar(container, scalar);
-    }
-    /// Multiplies all coefficients by the given scalar
-    Container MultScalar(Container&& container, const T& scalar) {
-        for (auto& elem : container) { elem *= scalar; }
-        return container;
-    }
-    /// Multiplies all coefficients by the given scalar
-    Container MultScalar(const T& scalar, Container&& container) {
-        return MultScalar(container, scalar);
-    }
-
-    /// Add the given scalar to all coefficients
-    Container PlusScalar(const Container& container, const T& scalar) {
-        Container res = container;
-        for (auto& elem : res) { elem += scalar; }
-        return res;
-    }
-    /// Add the given scalar to all coefficients
-    Container PlusScalar(const T& scalar, const Container& container) {
-        return PlusScalar(container, scalar);
-    }
-    /// Add the given scalar to all coefficients
-    Container PlusScalar(Container&& container, const T& scalar) {
-        for (auto& elem : container) { elem += scalar; }
-        return container;
-    }
-    /// Add the given scalar to all coefficients
-    Container PlusScalar(const T& scalar, Container&& container) {
-        return PlusScalar(container, scalar);
-    }
-
-    /// Computes Root Mean Square norm on the given container
-    T RMSNorm(const Container& container) {
-        return std::sqrt(
-            std::transform_reduce(
-                std::begin(container), std::end(container), std::begin(container), T(0)
-            ) / std::size(container)
-        );
-    }
-
 protected:
     T atol_;                   ///< absolute tolerance
     T rtol_;                   ///< relative tolerance
@@ -548,5 +414,7 @@ protected:
         {1, "Terminated. Too small time step"}
     }; ///< The array of possible solver messages
 };
+
+}
 
 }

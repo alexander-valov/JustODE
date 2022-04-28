@@ -84,30 +84,30 @@ template<
     class T,
     class Container,
     class Callable,
-    detail::IsFloatingPoint<T> = true,
-    detail::IsRealContainer<Container> = true
+    detail::type_traits::IsFloatingPoint<T> = true,
+    detail::type_traits::IsRealContainer<Container> = true
 >
 ODEResult<T> SolveIVP(
     Callable&& rhs,
     const std::array<T, 2>& interval,
     const Container& y0,
-    std::optional<detail::elem_type_t<decltype(interval)>> atol    = std::nullopt,
-    std::optional<detail::elem_type_t<decltype(interval)>> rtol    = std::nullopt,
-    std::optional<detail::elem_type_t<decltype(interval)>> hmax    = std::nullopt,
-    std::optional<detail::elem_type_t<decltype(interval)>> h_start = std::nullopt
+    std::optional<detail::type_traits::elem_type_t<decltype(interval)>> atol    = std::nullopt,
+    std::optional<detail::type_traits::elem_type_t<decltype(interval)>> rtol    = std::nullopt,
+    std::optional<detail::type_traits::elem_type_t<decltype(interval)>> hmax    = std::nullopt,
+    std::optional<detail::type_traits::elem_type_t<decltype(interval)>> h_start = std::nullopt
 ) {
     if constexpr (method == Methods::RK32) {
-        auto solver = RK32<T, Container>(atol, rtol, hmax, h_start);
+        auto solver = detail::RK32<T, Container>(atol, rtol, hmax, h_start);
         return solver.Solve(rhs, interval, y0);
     } else if constexpr (method == Methods::RKF45) {
-        auto solver = RKF45<T, Container>(atol, rtol, hmax, h_start);
+        auto solver = detail::RKF45<T, Container>(atol, rtol, hmax, h_start);
         return solver.Solve(rhs, interval, y0);
     } else if constexpr (method == Methods::DOPRI54) {
-        auto solver = DOPRI54<T, Container>(atol, rtol, hmax, h_start);
+        auto solver = detail::DOPRI54<T, Container>(atol, rtol, hmax, h_start);
         return solver.Solve(rhs, interval, y0);
     } else {
         static_assert(
-            detail::always_false<T>::value,
+            detail::type_traits::always_false<T>,
             "Unknown method. See avaliable methods in JustODE::Methods"
         );
     }

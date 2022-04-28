@@ -29,56 +29,156 @@
 // #include "EmbeddedSolvers.hpp"
 
 
-#include <limits>
-
-// #include "Utils.hpp"
+// #include "Utils/TraitsHelper.hpp"
 
 
 #include <type_traits>
 #include <iterator>
-#include <limits>
 
 namespace JustODE {
 
 namespace detail {
 
-    /** @brief Discarded statement dependent of the template parameters */
-    template <typename T>
-    struct always_false : std::false_type {};
+namespace type_traits {
+
+    // --------------------------------------------------------------------
+    // Instantiated false type.
+    // @see https://artificial-mind.net/blog/2020/10/03/always-false
+    // --------------------------------------------------------------------
+    template<class... T>
+    constexpr bool always_false = false;
+
+    /// Detection idiom details
+    namespace detection_idiom {
+        // --------------------------------------------------------------------
+        // C++17 compatible implementation of std::experimental::is_detected.
+        // @see https://en.cppreference.com/w/cpp/experimental/is_detected
+        // @see https://blog.tartanllama.xyz/detection-idiom/
+        // @see https://people.eecs.berkeley.edu/~brock/blog/detection_idiom.php
+        // --------------------------------------------------------------------
+        template<template <class...> class Trait, class Enabler, class... Args>
+        struct is_detected : std::false_type{};
+
+        template<template <class...> class Trait, class... Args>
+        struct is_detected<Trait, std::void_t<Trait<Args...>>, Args...> : std::true_type{};
+
+        template<template <class...> class Trait, class... Args>
+        using is_detected_t = typename is_detected<Trait, void, Args...>::type;
+        template<template <class...> class Trait, class... Args>
+        inline constexpr bool is_detected_v = is_detected<Trait, void, Args...>::value;
+
+
+        // --------------------------------------------------------------------
+        // Generalization of the detection idiom. In addition to detection,
+        // checks the ability to convert return type to the specified type `RetType`.
+        // --------------------------------------------------------------------
+        template<class RetType, template <class...> class Trait, class Enabler, class... Args>
+        struct is_detected_and_convertible : std::false_type{};
+
+        template<class RetType, template <class...> class Trait, class... Args>
+        struct is_detected_and_convertible<RetType, Trait, std::void_t<Trait<Args...>>, Args...> : std::is_convertible<Trait<Args...>, RetType> {};
+
+        template<class RetType, template <class...> class Trait, class... Args>
+        using is_detected_and_convertible_t = typename is_detected_and_convertible<RetType, Trait, void, Args...>::type;
+        template<class RetType, template <class...> class Trait, class... Args>
+        inline constexpr bool is_detected_and_convertible_v = is_detected_and_convertible<RetType, Trait, void, Args...>::value;
+    }
+
+    // --------------------------------------------------------------------
+    // Deduces type of the MatrixType element
+    // --------------------------------------------------------------------
+    template<class MatrixType>
+    using MatrixElemType = std::decay_t<decltype(std::declval<MatrixType>()(0, 0))>;
+
+    // --------------------------------------------------------------------
+    // Checks for specific method
+    // --------------------------------------------------------------------
+    // checks for std::size() method support
+    template<class T>
+    using method_size_t = decltype(std::size(std::declval<T>()));
+    template<class T>
+    using supports_size = detection_idiom::is_detected_t<method_size_t, T>;
+
+    // checks for std::begin() method support
+    template<class T>
+    using method_begin_t = decltype(std::begin(std::declval<T>()));
+    template<class T>
+    using supports_begin = detection_idiom::is_detected_t<method_begin_t, T>;
+
+    // checks for std::end() method support
+    template<class T>
+    using method_end_t = decltype(std::end(std::declval<T>()));
+    template<class T>
+    using supports_end = detection_idiom::is_detected_t<method_end_t, T>;
+
+    // --------------------------------------------------------------------
+    // Deduces element type of the iterable container
+    // --------------------------------------------------------------------
+    template<class Container>
+    using elem_type_t = std::decay_t<decltype(*std::begin(std::declval<Container>()))>;
+
+    // --------------------------------------------------------------------
+    // Checks for real data container
+    // --------------------------------------------------------------------
+    // checks are container elements real
+    template<class Container>
+    using is_real_type_data = std::is_floating_point<elem_type_t<Container>>;
+
+    // checks for real container
+    template<class Container>
+    using is_real_container = std::conjunction<
+        supports_begin<Container>,
+        supports_end<Container>,
+        supports_size<Container>,
+        is_real_type_data<Container>
+    >;
+
+    // --------------------------------------------------------------------
+    // SFINAE alias to check for floating point data iterable container
+    // --------------------------------------------------------------------
+    template<typename T>
+    using IsRealContainer = std::enable_if_t<is_real_container<T>::value, bool>;
+
+    // --------------------------------------------------------------------
+    // SFINAE alias to verify that the type is supports parethesis operator
+    // --------------------------------------------------------------------
+    template<class T>
+    using method_parenthesis_t = decltype(std::declval<T>()(std::declval<std::size_t>(), std::declval<std::size_t>()));
+    template<class T>
+    inline constexpr bool has_mehod_parenthesis_v = detection_idiom::is_detected_v<method_parenthesis_t, T>;
+    template<typename T>
+    using IsSupportsParenthesis = std::enable_if_t<has_mehod_parenthesis_v<T>, bool>;
 
     // ---------------------------------------------------------
-    // Checks whether the parameters pack contains a certain type
-    // ---------------------------------------------------------
-    template<class T, class ... Types>
-    using IsContainsType = std::enable_if_t<std::disjunction_v< always_false<T>, std::is_same<T, Types> ... >, bool>;
-
-    template<class T, class ... Types>
-    using IsNotContainsType = std::enable_if_t<!std::disjunction_v< always_false<T>, std::is_same<T, Types> ... >, bool>;
-
-    // ---------------------------------------------------------
-    // SFINAE to verify that the type is integral or floating point
+    // SFINAE alias to verify that the type is integral or floating point
     // ---------------------------------------------------------
     template<typename T>
     using IsFloatingPoint = std::enable_if_t<std::is_floating_point_v<T>, bool>;
-
     template<typename T>
     using IsIntegral = std::enable_if_t<std::is_integral_v<T>, bool>;
+
+    // ---------------------------------------------------------
+    // SFINAE alias to check whether the parameters pack
+    // contains or not a certain type
+    // ---------------------------------------------------------
+    template<class T, class ... Types>
+    using IsContainsType = std::enable_if_t<std::disjunction_v< always_false<T>, std::is_same<T, Types> ... >, bool>;
+    template<class T, class ... Types>
+    using IsNotContainsType = std::enable_if_t<!std::disjunction_v< always_false<T>, std::is_same<T, Types> ... >, bool>;
+
 
     // ---------------------------------------------------------
     // Promotes the given type to a floating point type
     // ---------------------------------------------------------
     template<class T, bool = std::is_integral<T>::value>
     struct promote_fp { typedef double type; };
-
     template<class T>
     struct promote_fp<T, false> {};
 
     template<>
     struct promote_fp<long double> { typedef long double type; };
-
     template<>
     struct promote_fp<double> { typedef double type; };
-
     template<>
     struct promote_fp<float> { typedef float type; };
 
@@ -97,69 +197,144 @@ namespace detail {
     >
     struct promote_fp_3 { typedef std::remove_reference_t<decltype(TP1() + TP2() + TP3())> type; };
 
-    // ---------------------------------------------------------
-    // Detection idiom
-    // C++17 compatible implementation of std::experimental::is_detected
-    // @see https://people.eecs.berkeley.edu/~brock/blog/detection_idiom.php
-    // @see https://blog.tartanllama.xyz/detection-idiom/
-    // ---------------------------------------------------------
-    namespace detect_detail {
-        template<template <class...> class Trait, class Enabler, class... Args>
-        struct is_detected : std::false_type{};
 
-        template<template <class...> class Trait, class... Args>
-        struct is_detected<Trait, std::void_t<Trait<Args...>>, Args...> : std::true_type{};
+    // --------------------------------------------------------------------
+    // Detects the relevant method to get the number of rows for the `InputType`.
+    // Detection Idioms that are used for the following purposes:
+    // 1. Detecting a specific method or attribute.
+    // 2. Checking the possibility of converting the return value
+    //    to the specified type.
+    // --------------------------------------------------------------------
+    template<class T>
+    using method_rows_t = decltype(std::declval<T>().rows());
+    template<class T, class RetType>
+    inline constexpr bool has_relevant_method_rows_v = detection_idiom::is_detected_and_convertible_v<RetType, method_rows_t, T>;
+
+    template<class T>
+    using attribute_n_rows_t = decltype(std::declval<T>().n_rows);
+    template<class T, class RetType>
+    inline constexpr bool has_relevant_attribute_n_rows_v = detection_idiom::is_detected_and_convertible_v<RetType, attribute_n_rows_t, T>;
+
+    template<class InputType>
+    int rows(const InputType& matrix) {
+        if constexpr (has_relevant_method_rows_v<InputType, int>) {
+            return matrix.rows();
+        } else if constexpr (has_relevant_attribute_n_rows_v<InputType, int>) {
+            return matrix.n_rows;
+        } else {
+            static_assert(
+                always_false<InputType>,
+                R"MESSAGE(
+                There are no supported methods of the `InputType` for accessing the number of matrix rows.
+                Supported methods:
+                    1. rows()
+                Supported attributes:
+                    1. n_rows
+                Note: return type must be convertible to `int` in the sense of std::is_convertible.
+                )MESSAGE"
+            );
+        }
     }
-    template<template <class...> class Trait, class... Args>
-    using is_detected = typename detect_detail::is_detected<Trait, void, Args...>::type;
 
-    // checks for std::size() method support
+    // --------------------------------------------------------------------
+    // Detects the relevant method to get the number of columns for the `InputType`.
+    // Detection Idioms that are used for the following purposes:
+    // 1. Detecting a specific method or attribute.
+    // 2. Checking the possibility of converting the return value
+    //    to the specified type.
+    // --------------------------------------------------------------------
     template<class T>
-    using method_size_t = decltype(std::size(std::declval<T>()));
+    using method_cols_t = decltype(std::declval<T>().cols());
+    template<class T, class RetType>
+    inline constexpr bool has_relevant_method_cols_v = detection_idiom::is_detected_and_convertible_v<RetType, method_cols_t, T>;
+
     template<class T>
-    using supports_size = is_detected<method_size_t, T>;
+    using method_columns_t = decltype(std::declval<T>().columns());
+    template<class T, class RetType>
+    inline constexpr bool has_relevant_method_columns_v = detection_idiom::is_detected_and_convertible_v<RetType, method_columns_t, T>;
 
-    // checks for std::begin() method support
     template<class T>
-    using method_begin_t = decltype(std::begin(std::declval<T>()));
+    using attribute_n_cols_t = decltype(std::declval<T>().n_cols);
+    template<class T, class RetType>
+    inline constexpr bool has_relevant_attribute_n_cols_v = detection_idiom::is_detected_and_convertible_v<RetType, attribute_n_cols_t, T>;
+
+    template<class InputType>
+    int cols(const InputType& matrix) {
+        if constexpr (has_relevant_method_cols_v<InputType, int>) {
+            return matrix.cols();
+        } else if constexpr (has_relevant_method_columns_v<InputType, int>) {
+            return matrix.columns();
+        } else if constexpr (has_relevant_attribute_n_cols_v<InputType, int>) {
+            return matrix.n_cols;
+        } else {
+            static_assert(
+                always_false<InputType>,
+                R"MESSAGE(
+                There are no supported methods of the `InputType` for accessing the number of matrix columns.
+                Supported methods:
+                    1. cols()
+                    2. columns()
+                Supported attributes:
+                    1. n_cols
+                Note: return type must be convertible to `int` in the sense of std::is_convertible.
+                )MESSAGE"
+            );
+        }
+    }
+
+
+    // --------------------------------------------------------------------
+    // Detects the relevant method to transpose matrix of `InputType`.
+    // Detection Idioms that are used for the following purposes:
+    // 1. Detecting a specific method or attribute.
+    // 2. Checking the possibility of converting the return value
+    //    to the specified type.
+    // --------------------------------------------------------------------
     template<class T>
-    using supports_begin = is_detected<method_begin_t, T>;
+    using method_transpose_t = decltype(std::declval<T>().transpose());
+    template<class T, class RetType>
+    inline constexpr bool has_relevant_method_transpose_v = detection_idiom::is_detected_and_convertible_v<RetType, method_transpose_t, T>;
 
-    // checks for std::end() method support
     template<class T>
-    using method_end_t = decltype(std::end(std::declval<T>()));
-    template<class T>
-    using supports_end = is_detected<method_end_t, T>;
+    using method_t_t = decltype(std::declval<T>().t());
+    template<class T, class RetType>
+    inline constexpr bool has_relevant_method_t_v = detection_idiom::is_detected_and_convertible_v<RetType, method_t_t, T>;
 
-    // obtains element type of iterable container
-    template<class Container>
-    using elem_type_t = std::decay_t<decltype(*std::begin(std::declval<Container>()))>;
+    template<class InputType>
+    InputType transpose(const InputType& matrix) {
+        if constexpr (has_relevant_method_transpose_v<InputType, InputType>) {
+            return matrix.transpose();
+        } else if constexpr (has_relevant_method_t_v<InputType, InputType>) {
+            return matrix.t();
+        } else if constexpr (std::is_copy_assignable_v<InputType>) {
+            InputType transposed = matrix;
+            assert(rows(matrix) == cols(matrix) && "Default transpose supports only square matrix");
+            auto n_rows = rows(matrix);
+            for (int ir = 0; ir < n_rows; ir++) {
+                for (int ic = ir + 1; ic < n_rows; ic++) {
+                    std::swap(transposed(ir, ic), transposed(ic, ir));
+                }
+            }
+            return transposed;
+        } else {
+            static_assert(
+                always_false<InputType>,
+                R"MESSAGE(
+                There are no supported methods of the `InputType` to transpose matrix.
+                Supported methods:
+                    1. transpose()
+                    2. t()
+                    3. Copy assignment operator and operator()(size_t, size_t)
+                Note:
+                    1. The presence of `Copy assignment operator and operator()(size_t, size_t)` is necessary
+                       for the default transposition algorithm, that uses std::swap().
+                    2. Return type must be convertible to `InputType` in the sense of std::is_convertible.
+                )MESSAGE"
+            );
+        }
+    }
+}
 
-    // checks are container elements real
-    template<class Container>
-    using is_real_type_data = std::is_floating_point<elem_type_t<Container>>;
-
-    // checks for real container
-    template<class Container>
-    using is_real_container = std::conjunction<
-        supports_begin<Container>,
-        supports_end<Container>,
-        supports_size<Container>,
-        is_real_type_data<Container>
-    >;
-
-    template<typename T>
-    using IsRealContainer = std::enable_if_t<is_real_container<T>::value, bool>;
-
-    // ---------------------------------------------------------
-    // Default parameters for embedded solvers
-    // ---------------------------------------------------------
-    template<class T, detail::IsFloatingPoint<T> = true>
-    struct DefaultParams {
-        constexpr static T atol = T(1e-6);
-        constexpr static T rtol = T(1e-3);
-        constexpr static T hmax = std::numeric_limits<T>::max();
-    };
 }
 
 }
@@ -170,13 +345,214 @@ namespace detail {
 #include <cmath>
 #include <array>
 #include <vector>
+#include <limits>
 #include <utility>
 #include <numeric>
 #include <algorithm>
 #include <optional>
 
-// #include "Utils.hpp"
+// #include "Utils/TraitsHelper.hpp"
 
+// #include "Utils/Operations.hpp"
+
+
+#include <cmath>
+#include <numeric>
+#include <algorithm>
+
+// #include "TraitsHelper.hpp"
+
+
+namespace JustODE {
+
+namespace detail {
+
+    // Coefficient-wise 
+    template<class Container, type_traits::IsRealContainer<Container> = true>
+    Container AbsCwise(const Container& container) {
+        Container result = container;
+        for (auto& item : result) {
+            item = std::abs(item);
+        }
+        return result;
+    }
+
+    /// Coefficient-wise maximum
+    template<class Container, type_traits::IsRealContainer<Container> = true>
+    Container MaxCwise(const Container& left, const Container& right) {
+        Container res = left;
+        auto first1 = std::begin(res);
+        auto last1  = std::end(res);
+        auto first2 = std::begin(right);
+        for (; first1 != last1; ++first1, (void)++first2) {
+            if (*first2 > *first1) {
+                *first1 = *first2;
+            }
+        }
+        return res;
+    }
+
+    /// Coefficient-wise summation
+    template<class Container, type_traits::IsRealContainer<Container> = true>
+    Container PlusCwise(const Container& left, const Container& right) {
+        Container res = left;
+        auto first1 = std::begin(res);
+        auto last1  = std::end(res);
+        auto first2 = std::begin(right);
+        for (; first1 != last1; ++first1, (void)++first2) {
+            *first1 += *first2;
+        }
+        return res;
+    }
+    /// Coefficient-wise summation
+    template<class Container, type_traits::IsRealContainer<Container> = true>
+    Container PlusCwise(Container&& left, const Container& right) {
+        auto first1 = std::begin(left);
+        auto last1  = std::end(left);
+        auto first2 = std::begin(right);
+        for (; first1 != last1; ++first1, (void)++first2) {
+            *first1 += *first2;
+        }
+        return left;
+    }
+
+    /// Coefficient-wise subtraction
+    template<class Container, type_traits::IsRealContainer<Container> = true>
+    Container MinusCwise(const Container& left, const Container& right) {
+        Container res = left;
+        auto first1 = std::begin(res);
+        auto last1  = std::end(res);
+        auto first2 = std::begin(right);
+        for (; first1 != last1; ++first1, (void)++first2) {
+            *first1 -= *first2;
+        }
+        return res;
+    }
+    /// Coefficient-wise subtraction
+    template<class Container, type_traits::IsRealContainer<Container> = true>
+    Container MinusCwise(Container&& left, const Container& right) {
+        auto first1 = std::begin(left);
+        auto last1  = std::end(left);
+        auto first2 = std::begin(right);
+        for (; first1 != last1; ++first1, (void)++first2) {
+            *first1 -= *first2;
+        }
+        return left;
+    }
+
+    /// Coefficient-wise division
+    template<class Container, type_traits::IsRealContainer<Container> = true>
+    Container DivCwise(const Container& left, const Container& right) {
+        Container res = left;
+        auto first1 = std::begin(res);
+        auto last1  = std::end(res);
+        auto first2 = std::begin(right);
+        for (; first1 != last1; ++first1, (void)++first2) {
+            *first1 /= *first2;
+        }
+        return res;
+    }
+    /// Coefficient-wise division
+    template<class Container, type_traits::IsRealContainer<Container> = true>
+    Container DivCwise(Container&& left, const Container& right) {
+        auto first1 = std::begin(left);
+        auto last1  = std::end(left);
+        auto first2 = std::begin(right);
+        for (; first1 != last1; ++first1, (void)++first2) {
+            *first1 /= *first2;
+        }
+        return left;
+    }
+
+    /// Multiplies all coefficients by the given scalar
+    template<class Container, class T, type_traits::IsRealContainer<Container> = true>
+    Container MultScalar(const Container& container, const T& scalar) {
+        Container res = container;
+        for (auto& elem : res) { elem *= scalar; }
+        return res;
+    }
+    /// Multiplies all coefficients by the given scalar
+    template<class Container, class T, type_traits::IsRealContainer<Container> = true>
+    Container MultScalar(const T& scalar, const Container& container) {
+        return MultScalar(container, scalar);
+    }
+    /// Multiplies all coefficients by the given scalar
+    template<class Container, class T, type_traits::IsRealContainer<Container> = true>
+    Container MultScalar(Container&& container, const T& scalar) {
+        for (auto& elem : container) { elem *= scalar; }
+        return container;
+    }
+    /// Multiplies all coefficients by the given scalar
+    template<class Container, class T, type_traits::IsRealContainer<Container> = true>
+    Container MultScalar(const T& scalar, Container&& container) {
+        return MultScalar(container, scalar);
+    }
+
+    /// Add the given scalar to all coefficients
+    template<class Container, class T, type_traits::IsRealContainer<Container> = true>
+    Container PlusScalar(const Container& container, const T& scalar) {
+        Container res = container;
+        for (auto& elem : res) { elem += scalar; }
+        return res;
+    }
+    /// Add the given scalar to all coefficients
+    template<class Container, class T, type_traits::IsRealContainer<Container> = true>
+    Container PlusScalar(const T& scalar, const Container& container) {
+        return PlusScalar(container, scalar);
+    }
+    /// Add the given scalar to all coefficients
+    template<class Container, class T, type_traits::IsRealContainer<Container> = true>
+    Container PlusScalar(Container&& container, const T& scalar) {
+        for (auto& elem : container) { elem += scalar; }
+        return container;
+    }
+    /// Add the given scalar to all coefficients
+    template<class Container, class T, type_traits::IsRealContainer<Container> = true>
+    Container PlusScalar(const T& scalar, Container&& container) {
+        return PlusScalar(container, scalar);
+    }
+
+    /// Matrix-vector multiplication
+    template<
+        class MatrixType,
+        class Container,
+        type_traits::IsSupportsParenthesis<MatrixType> = true,
+        type_traits::IsRealContainer<Container> = true
+    >
+    Container MVProd(const MatrixType& matrix, const Container& vec) {
+        Container result = vec;
+        for (auto& item : result) { item = 0; }
+        for (int ic = 0; ic < type_traits::cols(matrix); ic++) {
+            auto vec_it = std::next(std::begin(vec), ic);
+            for (int ir = 0; ir < type_traits::rows(matrix); ir++) {
+                auto res_it = std::next(std::begin(result), ir);
+                *res_it += matrix(ir, ic) * (*vec_it);
+            }
+        }
+        return result;
+    }
+
+    /// Computes Root Mean Square norm on the given container
+    template<class Container, class T, type_traits::IsRealContainer<Container> = true>
+    T RMSNorm(const Container& container, T init) {
+        return std::sqrt(
+            std::transform_reduce(
+                std::begin(container), std::end(container), std::begin(container), init
+            ) / std::size(container)
+        );
+    }
+
+    /// Squared 2-norm of the vector
+    template<class Container, class T, type_traits::IsRealContainer<Container> = true>
+    T SquaredNorm(const Container& container, T init) {
+        return std::transform_reduce(
+            std::begin(container), std::end(container), std::begin(container), init
+        );
+    }
+
+}
+
+}
 
 namespace JustODE {
 
@@ -191,6 +567,8 @@ struct ODEResult {
     std::string message;            ///< Termination cause description
     std::size_t nfev = 0;           ///< Number of RHS evaluations
 };
+
+namespace detail {
 
 /********************************************************************
  * @brief Adaptive explicit Runge-Kutta algorithm base class.
@@ -246,8 +624,8 @@ template<
     class Container,
     std::size_t ErrOrder,
     std::size_t NStages,
-    detail::IsFloatingPoint<T> = true,
-    detail::IsRealContainer<Container> = true
+    type_traits::IsFloatingPoint<T> = true,
+    type_traits::IsRealContainer<Container> = true
 >
 class RungeKuttaBase {
 
@@ -296,9 +674,9 @@ public:
             )MESSAGE"
         );
 
-        SetAtol(atol.value_or(detail::DefaultParams<T>::atol));
-        SetRtol(rtol.value_or(detail::DefaultParams<T>::rtol));
-        SetHmax(hmax.value_or(detail::DefaultParams<T>::hmax));
+        SetAtol(atol.value_or(T(1e-6)));
+        SetRtol(rtol.value_or(T(1e-3)));
+        SetHmax(hmax.value_or(std::numeric_limits<T>::max()));
         SetHStart(h_start);
     }
 
@@ -415,8 +793,8 @@ protected:
     T CalcInitialStep(Callable&& rhs, const T& t0, const Container& y0, const Container& f0) {
         // calculate step for second derivative approximation
         Container scale = PlusScalar(atol_, MultScalar(AbsCwise(y0), rtol_));
-        T d0 = RMSNorm(DivCwise(y0, scale));
-        T d1 = RMSNorm(DivCwise(f0, scale));
+        T d0 = RMSNorm(DivCwise(y0, scale), T(0));
+        T d1 = RMSNorm(DivCwise(f0, scale), T(0));
         T h0;
         if (d0 < T(1e-5) || d1 < T(1e-5)) { h0 = T(1e-6); }
         else { h0 = T(0.01) * d0 / d1; }
@@ -424,7 +802,7 @@ protected:
         // second derivative approximation
         Container y1 = PlusCwise(y0, MultScalar(h0, f0));
         Container f1 = rhs(t0 + h0, y1);
-        T d2 = RMSNorm(DivCwise(MinusCwise(f1, f0), scale)) / h0;
+        T d2 = RMSNorm(DivCwise(MinusCwise(f1, f0), scale), T(0)) / h0;
 
         T h1;
         if (d1 <= T(1e-15) && d2 <= T(1e-15)) {
@@ -528,7 +906,7 @@ protected:
      *********************************************************************/
     T ErrorEstimation(const Container& delta) {
         Container KTDotE = KTDot(Accessor::E, Accessor::E.size());
-        return RMSNorm(DivCwise(MultScalar(h_, KTDotE), delta));
+        return RMSNorm(DivCwise(MultScalar(h_, KTDotE), delta), T(0));
     }
 
     /********************************************************************
@@ -553,144 +931,6 @@ protected:
             ++res_it;
         }
         return result;
-    }
-
-    // Coefficient-wise abs
-    Container AbsCwise(const Container& container) {
-        Container result = container;
-        for (auto& item : result) {
-            item = std::abs(item);
-        }
-        return result;
-    }
-
-    /// Coefficient-wise maximum
-    Container MaxCwise(const Container& left, const Container& right) {
-        Container res = left;
-        auto first1 = std::begin(res);
-        auto last1  = std::end(res);
-        auto first2 = std::begin(right);
-        for (; first1 != last1; ++first1, (void)++first2) {
-            if (*first2 > *first1) {
-                *first1 = *first2;
-            }
-        }
-        return res;
-    }
-
-    /// Coefficient-wise summation
-    Container PlusCwise(const Container& left, const Container& right) {
-        Container res = left;
-        auto first1 = std::begin(res);
-        auto last1  = std::end(res);
-        auto first2 = std::begin(right);
-        for (; first1 != last1; ++first1, (void)++first2) {
-            *first1 += *first2;
-        }
-        return res;
-    }
-    /// Coefficient-wise summation
-    Container PlusCwise(Container&& left, const Container& right) {
-        auto first1 = std::begin(left);
-        auto last1  = std::end(left);
-        auto first2 = std::begin(right);
-        for (; first1 != last1; ++first1, (void)++first2) {
-            *first1 += *first2;
-        }
-        return left;
-    }
-
-    /// Coefficient-wise subtraction
-    Container MinusCwise(const Container& left, const Container& right) {
-        Container res = left;
-        auto first1 = std::begin(res);
-        auto last1  = std::end(res);
-        auto first2 = std::begin(right);
-        for (; first1 != last1; ++first1, (void)++first2) {
-            *first1 -= *first2;
-        }
-        return res;
-    }
-    /// Coefficient-wise subtraction
-    Container MinusCwise(Container&& left, const Container& right) {
-        auto first1 = std::begin(left);
-        auto last1  = std::end(left);
-        auto first2 = std::begin(right);
-        for (; first1 != last1; ++first1, (void)++first2) {
-            *first1 -= *first2;
-        }
-        return left;
-    }
-
-    /// Coefficient-wise division
-    Container DivCwise(const Container& left, const Container& right) {
-        Container res = left;
-        auto first1 = std::begin(res);
-        auto last1  = std::end(res);
-        auto first2 = std::begin(right);
-        for (; first1 != last1; ++first1, (void)++first2) {
-            *first1 /= *first2;
-        }
-        return res;
-    }
-    /// Coefficient-wise division
-    Container DivCwise(Container&& left, const Container& right) {
-        auto first1 = std::begin(left);
-        auto last1  = std::end(left);
-        auto first2 = std::begin(right);
-        for (; first1 != last1; ++first1, (void)++first2) {
-            *first1 /= *first2;
-        }
-        return left;
-    }
-
-    /// Multiplies all coefficients by the given scalar
-    Container MultScalar(const Container& container, const T& scalar) {
-        Container res = container;
-        for (auto& elem : res) { elem *= scalar; }
-        return res;
-    }
-    /// Multiplies all coefficients by the given scalar
-    Container MultScalar(const T& scalar, const Container& container) {
-        return MultScalar(container, scalar);
-    }
-    /// Multiplies all coefficients by the given scalar
-    Container MultScalar(Container&& container, const T& scalar) {
-        for (auto& elem : container) { elem *= scalar; }
-        return container;
-    }
-    /// Multiplies all coefficients by the given scalar
-    Container MultScalar(const T& scalar, Container&& container) {
-        return MultScalar(container, scalar);
-    }
-
-    /// Add the given scalar to all coefficients
-    Container PlusScalar(const Container& container, const T& scalar) {
-        Container res = container;
-        for (auto& elem : res) { elem += scalar; }
-        return res;
-    }
-    /// Add the given scalar to all coefficients
-    Container PlusScalar(const T& scalar, const Container& container) {
-        return PlusScalar(container, scalar);
-    }
-    /// Add the given scalar to all coefficients
-    Container PlusScalar(Container&& container, const T& scalar) {
-        for (auto& elem : container) { elem += scalar; }
-        return container;
-    }
-    /// Add the given scalar to all coefficients
-    Container PlusScalar(const T& scalar, Container&& container) {
-        return PlusScalar(container, scalar);
-    }
-
-    /// Computes Root Mean Square norm on the given container
-    T RMSNorm(const Container& container) {
-        return std::sqrt(
-            std::transform_reduce(
-                std::begin(container), std::end(container), std::begin(container), T(0)
-            ) / std::size(container)
-        );
     }
 
 protected:
@@ -718,7 +958,11 @@ protected:
 
 }
 
+}
+
 namespace JustODE {
+
+namespace detail {
 
 /********************************************************************
  * @brief Bogacki-Shampine 3(2) method.
@@ -735,7 +979,7 @@ namespace JustODE {
  * @see https://www.sciencedirect.com/science/article/pii/0893965989900797
  * @see https://en.wikipedia.org/wiki/Bogacki%E2%80%93Shampine_method
  *********************************************************************/
-template<class T, class Container, detail::IsFloatingPoint<T> = true, detail::IsRealContainer<Container> = true>
+template<class T, class Container, type_traits::IsFloatingPoint<T> = true, type_traits::IsRealContainer<Container> = true>
 class RK32: public RungeKuttaBase<RK32<T, Container>, T, Container, 2, 3> {
 
 public:
@@ -788,7 +1032,7 @@ protected:
  * @see https://en.wikipedia.org/wiki/Runge%E2%80%93Kutta%E2%80%93Fehlberg_method
  * @see https://www.johndcook.com/blog/2020/02/19/fehlberg/
  *********************************************************************/
-template<class T, class Container, detail::IsFloatingPoint<T> = true, detail::IsRealContainer<Container> = true>
+template<class T, class Container, type_traits::IsFloatingPoint<T> = true, type_traits::IsRealContainer<Container> = true>
 class RKF45: public RungeKuttaBase<RKF45<T, Container>, T, Container, 4, 6> {
 
 public:
@@ -844,7 +1088,7 @@ protected:
  * @see https://en.wikipedia.org/wiki/Dormand%E2%80%93Prince_method
  * @see https://www.johndcook.com/blog/2020/02/19/dormand-prince/
  *********************************************************************/
-template<class T, class Container, detail::IsFloatingPoint<T> = true, detail::IsRealContainer<Container> = true>
+template<class T, class Container, type_traits::IsFloatingPoint<T> = true, type_traits::IsRealContainer<Container> = true>
 class DOPRI54: public RungeKuttaBase<DOPRI54<T, Container>, T, Container, 4, 6> {
 
 public:
@@ -882,6 +1126,8 @@ protected:
         T(-71)/T(57600), T(0), T(71)/T(16695), T(-71)/T(1920), T(17253)/T(339200), T(-22)/T(525), T(1)/T(40)
     };
 };
+
+}
 
 }
 
@@ -941,30 +1187,30 @@ template<
     class T,
     class Container,
     class Callable,
-    detail::IsFloatingPoint<T> = true,
-    detail::IsRealContainer<Container> = true
+    detail::type_traits::IsFloatingPoint<T> = true,
+    detail::type_traits::IsRealContainer<Container> = true
 >
 ODEResult<T> SolveIVP(
     Callable&& rhs,
     const std::array<T, 2>& interval,
     const Container& y0,
-    std::optional<detail::elem_type_t<decltype(interval)>> atol    = std::nullopt,
-    std::optional<detail::elem_type_t<decltype(interval)>> rtol    = std::nullopt,
-    std::optional<detail::elem_type_t<decltype(interval)>> hmax    = std::nullopt,
-    std::optional<detail::elem_type_t<decltype(interval)>> h_start = std::nullopt
+    std::optional<detail::type_traits::elem_type_t<decltype(interval)>> atol    = std::nullopt,
+    std::optional<detail::type_traits::elem_type_t<decltype(interval)>> rtol    = std::nullopt,
+    std::optional<detail::type_traits::elem_type_t<decltype(interval)>> hmax    = std::nullopt,
+    std::optional<detail::type_traits::elem_type_t<decltype(interval)>> h_start = std::nullopt
 ) {
     if constexpr (method == Methods::RK32) {
-        auto solver = RK32<T, Container>(atol, rtol, hmax, h_start);
+        auto solver = detail::RK32<T, Container>(atol, rtol, hmax, h_start);
         return solver.Solve(rhs, interval, y0);
     } else if constexpr (method == Methods::RKF45) {
-        auto solver = RKF45<T, Container>(atol, rtol, hmax, h_start);
+        auto solver = detail::RKF45<T, Container>(atol, rtol, hmax, h_start);
         return solver.Solve(rhs, interval, y0);
     } else if constexpr (method == Methods::DOPRI54) {
-        auto solver = DOPRI54<T, Container>(atol, rtol, hmax, h_start);
+        auto solver = detail::DOPRI54<T, Container>(atol, rtol, hmax, h_start);
         return solver.Solve(rhs, interval, y0);
     } else {
         static_assert(
-            detail::always_false<T>::value,
+            detail::type_traits::always_false<T>,
             "Unknown method. See avaliable methods in JustODE::Methods"
         );
     }

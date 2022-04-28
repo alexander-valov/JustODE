@@ -6,6 +6,10 @@ project(
     LANGUAGES CXX
 )
 
+message("\n=======================================================")
+message("Configuring JustODE")
+message("-------------------------------------------------------")
+
 # ---------------------------------------------------------------
 # Check if JustODE is built as subproject or it's main project
 # ---------------------------------------------------------------
@@ -13,6 +17,8 @@ set(JUST_ODE_MAIN_PROJECT OFF)
 if (CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
     set(JUST_ODE_MAIN_PROJECT ON)
 endif()
+
+message("-- Is JustODE the main project: ${JUST_ODE_MAIN_PROJECT}")
 
 # ---------------------------------------------------------------
 # Define options
@@ -24,16 +30,18 @@ endif()
 option(JUST_ODE_BUILD_TESTS "Build the unit tests" ${JUST_ODE_MAIN_PROJECT})
 option(JUST_ODE_SINGLE_HEADER "Use single-header version" OFF)
 
+message("-- Is tests be built: ${JUST_ODE_BUILD_TESTS}")
+
 # ---------------------------------------------------------------
 # Define configuration
 # ---------------------------------------------------------------
 set(JUST_ODE_TARGET_NAME ${PROJECT_NAME})
 if (JUST_ODE_SINGLE_HEADER)
     set(JUST_ODE_INCLUDE_BUILD_DIR "${PROJECT_SOURCE_DIR}/include_single")
-    message("  ${JUST_ODE_TARGET_NAME}: Using single-header version")
+    message("-- Using single-header version")
 else()
     set(JUST_ODE_INCLUDE_BUILD_DIR "${PROJECT_SOURCE_DIR}/include")
-    message("  ${JUST_ODE_TARGET_NAME}: Using multi-header version")
+    message("-- Using multi-header version")
 endif()
 
 # ---------------------------------------------------------------
@@ -41,9 +49,9 @@ endif()
 # ---------------------------------------------------------------
 if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
-    message("  ${JUST_ODE_TARGET_NAME}: Using default value of CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
+    message("-- Using default value of CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 else()
-    message("  ${JUST_ODE_TARGET_NAME}: Obtained CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
+    message("-- Obtained CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 endif()
 
 # ---------------------------------------------------------------
@@ -66,3 +74,5 @@ if (JUST_ODE_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
+
+message("=======================================================\n")

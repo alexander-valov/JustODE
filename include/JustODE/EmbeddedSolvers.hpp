@@ -1,11 +1,11 @@
 #pragma once
 
-#include <limits>
-
-#include "Utils.hpp"
+#include "Utils/TraitsHelper.hpp"
 #include "RungeKuttaBase.hpp"
 
 namespace JustODE {
+
+namespace detail {
 
 /********************************************************************
  * @brief Bogacki-Shampine 3(2) method.
@@ -22,7 +22,7 @@ namespace JustODE {
  * @see https://www.sciencedirect.com/science/article/pii/0893965989900797
  * @see https://en.wikipedia.org/wiki/Bogacki%E2%80%93Shampine_method
  *********************************************************************/
-template<class T, class Container, detail::IsFloatingPoint<T> = true, detail::IsRealContainer<Container> = true>
+template<class T, class Container, type_traits::IsFloatingPoint<T> = true, type_traits::IsRealContainer<Container> = true>
 class RK32: public RungeKuttaBase<RK32<T, Container>, T, Container, 2, 3> {
 
 public:
@@ -75,7 +75,7 @@ protected:
  * @see https://en.wikipedia.org/wiki/Runge%E2%80%93Kutta%E2%80%93Fehlberg_method
  * @see https://www.johndcook.com/blog/2020/02/19/fehlberg/
  *********************************************************************/
-template<class T, class Container, detail::IsFloatingPoint<T> = true, detail::IsRealContainer<Container> = true>
+template<class T, class Container, type_traits::IsFloatingPoint<T> = true, type_traits::IsRealContainer<Container> = true>
 class RKF45: public RungeKuttaBase<RKF45<T, Container>, T, Container, 4, 6> {
 
 public:
@@ -131,7 +131,7 @@ protected:
  * @see https://en.wikipedia.org/wiki/Dormand%E2%80%93Prince_method
  * @see https://www.johndcook.com/blog/2020/02/19/dormand-prince/
  *********************************************************************/
-template<class T, class Container, detail::IsFloatingPoint<T> = true, detail::IsRealContainer<Container> = true>
+template<class T, class Container, type_traits::IsFloatingPoint<T> = true, type_traits::IsRealContainer<Container> = true>
 class DOPRI54: public RungeKuttaBase<DOPRI54<T, Container>, T, Container, 4, 6> {
 
 public:
@@ -169,5 +169,7 @@ protected:
         T(-71)/T(57600), T(0), T(71)/T(16695), T(-71)/T(1920), T(17253)/T(339200), T(-22)/T(525), T(1)/T(40)
     };
 };
+
+}
 
 }
