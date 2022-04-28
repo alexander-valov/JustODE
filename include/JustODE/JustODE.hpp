@@ -26,6 +26,10 @@
 
 #pragma once
 
+#define JUST_ODE_VERSION_MAJOR 0
+#define JUST_ODE_VERSION_MINOR 8
+#define JUST_ODE_VERSION_PATCH 0
+
 #include "EmbeddedSolvers.hpp"
 
 namespace JustODE {

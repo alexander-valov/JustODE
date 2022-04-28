@@ -1,14 +1,17 @@
 cmake_minimum_required(VERSION 3.10)
 
+file(READ ${CMAKE_CURRENT_SOURCE_DIR}/scripts/version.txt VERSION)
+
 project(
     JustODE
-    VERSION 0.0.2
+    VERSION ${VERSION}
     LANGUAGES CXX
 )
 
 message("\n=======================================================")
 message("Configuring JustODE")
 message("-------------------------------------------------------")
+message("-- Version: ${VERSION}")
 
 # ---------------------------------------------------------------
 # Check if JustODE is built as subproject or it's main project

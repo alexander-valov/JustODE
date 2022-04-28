@@ -1,2 +1,2 @@
 #!/bin/bash
-amalgamate/amalgamate.py -c amalgamate/config.json -s .. --verbose=yes
+python amalgamate/amalgamate.py -c amalgamate/config.json -s .. --verbose=yes

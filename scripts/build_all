@@ -1,12 +1,21 @@
 #!/bin/bash
 
 # Input parameters
+IS_UPDATE_VERSION=true
 IS_GENERATE_SINGLE_HEADER=true
 ROOT_FOLDER=".."
 CMAKE_BUILD_TYPE=Release
 IS_INSTALL=false
 CMAKE_CXX_COMPILER=g++
 CMAKE_CXX_FLAGS="-m64 -Wall -pedantic"
+
+# Update version
+if [ "$IS_UPDATE_VERSION" = true ]; then
+    printf %"s\n" "-------------------------------------------------------"
+    printf "Updating version:\n\n"
+    python update_version.py
+    printf %"s\n\n" "-------------------------------------------------------"
+fi
 
 # Generate single header version
 if [ "$IS_GENERATE_SINGLE_HEADER" = true ]; then
